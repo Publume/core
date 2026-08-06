@@ -56,6 +56,63 @@ function articleClient(body: string): AiClient {
 }
 
 describe('editorial output boundary', () => {
+  it('maps configured BCP 47 tags to explicit generation languages while preserving the tags', async () => {
+    let systemPrompt = ''
+    const requestedLanguages = [
+      ['zh-CN', 'Simplified Chinese'],
+      ['zh-TW', 'Traditional Chinese'],
+      ['en', 'English'],
+      ['ja', 'Japanese'],
+      ['ko', 'Korean'],
+      ['es', 'Spanish'],
+      ['fr', 'French'],
+      ['de', 'German'],
+      ['pt-BR', 'Brazilian Portuguese'],
+      ['it', 'Italian'],
+      ['ru', 'Russian'],
+      ['ar', 'Arabic'],
+      ['hi', 'Hindi'],
+      ['id', 'Indonesian'],
+      ['tr', 'Turkish'],
+      ['nl', 'Dutch'],
+      ['pl', 'Polish'],
+      ['vi', 'Vietnamese'],
+      ['th', 'Thai'],
+      ['ms', 'Malay'],
+    ] as const
+    const languages = requestedLanguages.map(([tag]) => tag)
+    const editorial = createEditorial(
+      { ...config, languages },
+      {
+        async complete(request) {
+          systemPrompt = request.system
+          return {
+            choices: [
+              {
+                message: {
+                  content: JSON.stringify({
+                    articles: languages.map((language) => ({
+                      language,
+                      title: `Title in ${language}`,
+                      summary: `Summary in ${language}`,
+                      body: `Body in ${language}`,
+                      sourceUrls: [candidate.canonicalUrl],
+                    })),
+                  }),
+                },
+              },
+            ],
+          }
+        },
+      },
+    )
+
+    await editorial.generate(candidate, decision)
+
+    for (const [tag, name] of requestedLanguages) expect(systemPrompt).toContain(`${tag} = ${name}`)
+    expect(systemPrompt).toContain('Keep each article.language value as its original BCP 47 tag')
+  })
+
   it('gives the publication gate recent approved coverage for semantic deduplication', async () => {
     let userPrompt = ''
     const editorial = createEditorial(config, {

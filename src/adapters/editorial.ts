@@ -26,6 +26,28 @@ const articleSchema = z
 
 const generationSchema = z.object({ articles: z.array(articleSchema) }).strict()
 const blockingRisks = new Set(['block', 'unsafe', 'insufficient-evidence', 'no-evidence'])
+const outputLanguageNames: Readonly<Partial<Record<string, string>>> = {
+  'zh-CN': 'Simplified Chinese',
+  'zh-TW': 'Traditional Chinese',
+  en: 'English',
+  ja: 'Japanese',
+  ko: 'Korean',
+  es: 'Spanish',
+  fr: 'French',
+  de: 'German',
+  'pt-BR': 'Brazilian Portuguese',
+  it: 'Italian',
+  ru: 'Russian',
+  ar: 'Arabic',
+  hi: 'Hindi',
+  id: 'Indonesian',
+  tr: 'Turkish',
+  nl: 'Dutch',
+  pl: 'Polish',
+  vi: 'Vietnamese',
+  th: 'Thai',
+  ms: 'Malay',
+}
 
 function responseContent(value: unknown): string {
   if (!value || typeof value !== 'object') throw new Error('AI response must be an object')
@@ -63,11 +85,17 @@ function gatePrompt(config: EditorialConfig): string {
   ].join('\n\n')
 }
 
+function describeOutputLanguages(languages: readonly string[]): string {
+  return languages
+    .map((tag) => `${tag} = ${outputLanguageNames[tag] ?? `the language identified by BCP 47 tag ${tag}`}`)
+    .join(', ')
+}
+
 function articlePrompt(config: EditorialConfig): string {
   return [
     config.articlePrompt,
     config.instructions,
-    `Return exactly one JSON object with an articles array containing one object for every requested language (${config.languages.join(', ')}). Each article object must use exactly these keys: language, title, summary, body, sourceUrls. body must be Markdown text and sourceUrls must be an array of URLs. Use only the candidate and its source URL. Do not use a content key. Return strict JSON and no Markdown code fence.`,
+    `Generate each article in the exact requested language: ${describeOutputLanguages(config.languages)}. Keep each article.language value as its original BCP 47 tag. Return exactly one JSON object with an articles array containing one object for every requested language (${config.languages.join(', ')}). Each article object must use exactly these keys: language, title, summary, body, sourceUrls. body must be Markdown text and sourceUrls must be an array of URLs. Use only the candidate and its source URL. Do not use a content key. Return strict JSON and no Markdown code fence.`,
   ].join('\n\n')
 }
 
