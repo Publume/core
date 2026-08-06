@@ -1,0 +1,53 @@
+{
+  "name": "@publume/core",
+  "version": "0.1.0",
+  "private": true,
+  "description": "A configuration-first content intelligence and static publishing engine.",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Publume/core.git"
+  },
+  "homepage": "https://github.com/Publume/core#readme",
+  "bugs": {
+    "url": "https://github.com/Publume/core/issues"
+  },
+  "keywords": [
+    "ai",
+    "content-pipeline",
+    "github-actions",
+    "publishing",
+    "static-site"
+  ],
+  "type": "module",
+  "packageManager": "bun@1.3.14",
+  "engines": {
+    "bun": ">=1.3.0"
+  },
+  "scripts": {
+    "run": "bun src/cli.ts",
+    "bootstrap": "bun src/cli.ts --bootstrap",
+    "build": "bun run typecheck",
+    "typecheck": "tsc --noEmit",
+    "lint": "biome lint .",
+    "format": "biome format --write .",
+    "format:check": "biome format .",
+    "quality": "biome check .",
+    "test": "bun test",
+    "acceptance": "bun run scripts/acceptance.ts",
+    "action:local": "bun scripts/local-action.ts",
+    "check": "bun run quality && bun run typecheck && bun test && bun run acceptance"
+  },
+  "dependencies": {
+    "cheerio": "^1.1.2",
+    "rss-parser": "^3.13.0",
+    "zod": "^4.0.0"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "2.5.7",
+    "@types/bun": "latest",
+    "@types/node": "^26.1.2",
+    "@types/xml2js": "^0.4.14",
+    "typescript": "^5.9.0"
+  }
+}

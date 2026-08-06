@@ -1,0 +1,115 @@
+name: Generate and publish
+
+on:
+  repository_dispatch:
+    types: [publume-schedule]
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: Run mode
+        required: false
+        default: run
+        type: choice
+        options: [run, bootstrap]
+
+concurrency:
+  group: publume-generate
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  generate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      AI_PROVIDER: ${{ vars.AI_PROVIDER }}
+      AI_API_KEY: ${{ secrets.AI_API_KEY }}
+      AI_BASE_URL: ${{ vars.AI_BASE_URL }}
+      AI_MODEL: ${{ vars.AI_MODEL }}
+      AI_ALLOWED_MODELS: ${{ vars.AI_ALLOWED_MODELS }}
+      AI_RESPONSE_FORMAT: ${{ vars.AI_RESPONSE_FORMAT }}
+      AI_TIMEOUT_SECONDS: ${{ vars.AI_TIMEOUT_SECONDS }}
+      TARGET_REPOSITORY: ${{ vars.TARGET_REPOSITORY }}
+      TARGET_REPO_TOKEN: ${{ secrets.TARGET_REPO_TOKEN }}
+      TARGET_BRANCH: ${{ vars.TARGET_BRANCH }}
+      SOURCE_URLS: ${{ vars.SOURCE_URLS }}
+      SOURCE_TIMEOUT_SECONDS: ${{ vars.SOURCE_TIMEOUT_SECONDS }}
+      CONTENT_INSTRUCTIONS: ${{ vars.CONTENT_INSTRUCTIONS }}
+      GATE_PROMPT: ${{ vars.GATE_PROMPT }}
+      ARTICLE_PROMPT: ${{ vars.ARTICLE_PROMPT }}
+      OUTPUT_LANGUAGES: ${{ vars.OUTPUT_LANGUAGES }}
+      PUBLISH_THRESHOLD: ${{ vars.PUBLISH_THRESHOLD }}
+      DEDUPLICATION_CONTEXT_SIZE: ${{ vars.DEDUPLICATION_CONTEXT_SIZE }}
+      MAX_ITEM_AGE_HOURS: ${{ vars.MAX_ITEM_AGE_HOURS }}
+      MAX_CANDIDATES_PER_RUN: ${{ vars.MAX_CANDIDATES_PER_RUN }}
+      MAX_DECISION_RECORDS: ${{ vars.MAX_DECISION_RECORDS }}
+      MAX_PENDING_DELIVERIES: ${{ vars.MAX_PENDING_DELIVERIES }}
+      MINIMUM_CONTENT_LENGTH: ${{ vars.MINIMUM_CONTENT_LENGTH }}
+      STATE_PATH: ${{ vars.STATE_PATH }}
+      DELIVERY_CONFIG: ${{ secrets.DELIVERY_CONFIG }}
+      THEME_REPOSITORY: ${{ vars.THEME_REPOSITORY }}
+      THEME_REF: ${{ vars.THEME_REF }}
+      THEME: ${{ vars.THEME }}
+      SITE_URL: ${{ vars.SITE_URL }}
+      SITE_NAME: ${{ vars.SITE_NAME }}
+      SITE_DESCRIPTION: ${{ vars.SITE_DESCRIPTION }}
+      SITE_TAGLINE: ${{ vars.SITE_TAGLINE }}
+      SITE_LOCALE: ${{ vars.SITE_LOCALE }}
+      SITE_PUBLISHER_NAME: ${{ vars.SITE_PUBLISHER_NAME }}
+      SITE_AUTHOR_NAME: ${{ vars.SITE_AUTHOR_NAME }}
+      SITE_CONTACT_URL: ${{ vars.SITE_CONTACT_URL }}
+      SITE_AI_DISCLOSURE: ${{ vars.SITE_AI_DISCLOSURE }}
+      SITE_SOCIAL_IMAGE_URL: ${{ vars.SITE_SOCIAL_IMAGE_URL }}
+      SITE_NEWSLETTER_URL: ${{ vars.SITE_NEWSLETTER_URL }}
+      SITE_SPONSOR_URL: ${{ vars.SITE_SPONSOR_URL }}
+      SITE_THEME: ${{ vars.SITE_THEME }}
+      SITE_PRIMARY_COLOR: ${{ vars.SITE_PRIMARY_COLOR }}
+      SITE_ACCENT_COLOR: ${{ vars.SITE_ACCENT_COLOR }}
+      SITE_BACKGROUND_COLOR: ${{ vars.SITE_BACKGROUND_COLOR }}
+      SITE_SURFACE_COLOR: ${{ vars.SITE_SURFACE_COLOR }}
+      SITE_TEXT_COLOR: ${{ vars.SITE_TEXT_COLOR }}
+      SITE_MUTED_COLOR: ${{ vars.SITE_MUTED_COLOR }}
+      SITE_MAX_WIDTH: ${{ vars.SITE_MAX_WIDTH }}
+      SITE_CARD_RADIUS: ${{ vars.SITE_CARD_RADIUS }}
+      SITE_ARTICLE_TITLE_MAX_SIZE: ${{ vars.SITE_ARTICLE_TITLE_MAX_SIZE }}
+      SITE_SHOW_TOPICS: ${{ vars.SITE_SHOW_TOPICS }}
+      SITE_SHOW_SCORE: ${{ vars.SITE_SHOW_SCORE }}
+      SITE_SHOW_SOURCES: ${{ vars.SITE_SHOW_SOURCES }}
+      SITE_FOOTER_TEXT: ${{ vars.SITE_FOOTER_TEXT }}
+      PUBLUME_LOCAL: ${{ vars.PUBLUME_LOCAL }}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.14
+      - run: bun install --frozen-lockfile
+      - name: Run Publume Core
+        env:
+          PUBLUME_MODE: ${{ inputs.mode || 'run' }}
+        run: |
+          summary="$(bun src/cli.ts $([ "$PUBLUME_MODE" = bootstrap ] && echo --bootstrap))"
+          echo "$summary"
+          {
+            echo '## Publume Core run'
+            echo '```json'
+            echo "$summary"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+      - name: Persist decision state
+        run: |
+          state_path="${STATE_PATH:-state/decisions.json}"
+          git config user.name 'publume[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -- "$state_path"
+          if git diff --cached --quiet; then
+            echo 'No decision state changes.'
+          else
+            git commit -m 'chore: persist publishing decisions'
+            if [ "$PUBLUME_LOCAL" = true ]; then
+              echo 'Local simulation: state commit kept locally; remote push skipped.'
+            else
+              git push
+            fi
+          fi

@@ -1,0 +1,28 @@
+import { createDeliveryChannels } from './adapters/delivery'
+import { createEditorial } from './adapters/editorial'
+import { createFileDecisionStore } from './adapters/file-decisions'
+import { createOpenAiClient } from './adapters/openai'
+import { createSitePublisher } from './adapters/site-publisher'
+import { createSourceReader } from './adapters/sources/reader'
+import { runPipeline } from './app/pipeline'
+import type { PipelinePorts } from './app/ports'
+import { loadConfig } from './config/load'
+import type { AppConfig } from './config/model'
+
+function createPorts(config: AppConfig): PipelinePorts {
+  return {
+    sources: createSourceReader(config.sources.entries, config.sources.timeoutMs),
+    editorial: createEditorial(config.editorial, createOpenAiClient(config.ai)),
+    decisions: createFileDecisionStore(config.state.path),
+    site: createSitePublisher(config),
+    delivery: createDeliveryChannels(config.delivery.channels),
+  }
+}
+
+async function main(): Promise<void> {
+  const config = loadConfig()
+  const mode = process.argv.includes('--bootstrap') ? 'bootstrap' : 'run'
+  console.log(JSON.stringify(await runPipeline(config, createPorts(config), { mode })))
+}
+
+if (import.meta.main) await main()

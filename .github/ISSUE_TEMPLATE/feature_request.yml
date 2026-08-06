@@ -1,0 +1,29 @@
+name: Feature request
+description: Propose a focused improvement to Publume Core.
+title: "[Feature]: "
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What user problem cannot be solved with the current configuration or workflow?
+    validations:
+      required: true
+  - type: textarea
+    id: outcome
+    attributes:
+      label: Desired outcome
+      description: Describe observable behavior rather than an implementation preference.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Explain existing configuration, platform features, or external tools you evaluated.
+  - type: textarea
+    id: contracts
+    attributes:
+      label: Contract impact
+      description: Note any environment, state, theme, output, or workflow contract changes.

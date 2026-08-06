@@ -1,0 +1,57 @@
+name: Upgrade Publume Core
+
+on:
+  workflow_dispatch:
+    inputs:
+      core_repository:
+        description: Publume Core source repository
+        required: true
+        default: Publume/core
+        type: string
+      core_ref:
+        description: Publume Core release, tag, or branch
+        required: true
+        default: main
+        type: string
+
+concurrency:
+  group: publume-upgrade
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  upgrade:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out managed Core
+        uses: actions/checkout@v6
+      - name: Check out requested Core release
+        uses: actions/checkout@v6
+        with:
+          repository: ${{ inputs.core_repository }}
+          ref: ${{ inputs.core_ref }}
+          path: .publume-upstream
+      - name: Synchronize managed files
+        run: |
+          rsync -a --delete \
+            --exclude '.git/' \
+            --exclude '.publume-upstream/' \
+            --exclude 'state/' \
+            .publume-upstream/ ./
+          rm -rf -- .publume-upstream
+      - name: Commit the upgrade
+        env:
+          CORE_REF: ${{ inputs.core_ref }}
+        run: |
+          git config user.name 'publume[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add --all
+          if git diff --cached --quiet; then
+            echo 'Core is already current.'
+          else
+            git commit -m "chore: upgrade Publume Core to ${CORE_REF}"
+            git push
+          fi

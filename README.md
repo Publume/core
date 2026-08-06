@@ -1,0 +1,160 @@
+# Publume Core
+
+[![CI](https://github.com/Publume/core/actions/workflows/ci.yml/badge.svg)](https://github.com/Publume/core/actions/workflows/ci.yml)
+[![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
+
+Publume Core is a configuration-first personal information and publishing
+engine. It collects recent source material, applies deterministic filters and an
+AI publication gate, generates source-linked summaries, commits validated
+content to a separate site repository, and can deliver it through optional
+notification channels.
+
+The project is designed for scheduled GitHub Actions runs. It has no database,
+long-running server, or bundled site theme.
+
+> **Project status:** Publume Core is pre-1.0. Configuration and storage contracts
+> may change before the first stable release.
+
+## How it works
+
+```text
+RSS / Atom / JSON / HTML
+            |
+            v
+normalize -> deduplicate -> recency and hard filters
+            |
+            v
+        AI publication gate
+            |
+            v
+   multilingual generation -> runtime validation
+            |
+            v
+       target site repository -> site deployment workflow
+            |
+            v
+ Telegram / webhooks / ntfy / Matrix / email
+```
+
+A scheduled run can succeed without publishing anything. Candidates that are
+duplicate, stale, unsupported, low-value, unsafe, or below the configured score
+threshold are rejected before they reach the target repository.
+
+## Requirements
+
+- [Bun](https://bun.sh/) 1.3.14 or newer
+- Git 2.39 or newer
+- An OpenAI-compatible chat completions endpoint
+- A writable target Git repository
+- A compatible theme repository for first-time site bootstrap
+
+## Quick start
+
+```bash
+git clone https://github.com/Publume/core.git
+cd core
+bun install --frozen-lockfile
+cp .env.example .env
+```
+
+Configure at least these values in `.env`:
+
+```env
+AI_PROVIDER=openai-compatible
+AI_API_KEY=your-api-key
+AI_BASE_URL=https://your-provider.example/v1
+AI_MODEL=your-model
+
+TARGET_REPOSITORY=owner/site-repository
+TARGET_REPO_TOKEN=your-fine-grained-token
+
+SOURCE_URLS="https://source.example/feed.xml"
+CONTENT_INSTRUCTIONS="Describe the audience, subject, and publication standard."
+```
+
+Then verify the repository and bootstrap the target site:
+
+```bash
+bun run check
+bun run bootstrap
+```
+
+Run the normal pipeline with:
+
+```bash
+bun run run
+```
+
+Never commit `.env` or any API token. The checked-in `.env.example` contains no
+working credentials.
+
+## GitHub Actions
+
+The `Generate and publish` workflow supports manual runs and
+`repository_dispatch` events of type `publume-schedule`.
+
+Store credentials as repository secrets:
+
+- `AI_API_KEY`
+- `TARGET_REPO_TOKEN`
+- `DELIVERY_CONFIG` when notification channels are enabled
+
+Store non-secret configuration as repository variables. See
+[Configuration](docs/configuration.md) for the complete list.
+
+The optional Worker in [`scheduler/`](scheduler/) dispatches the workflow every
+two hours. `GITHUB_TOKEN` must be configured as a Cloudflare Worker secret, and
+`GITHUB_REPOSITORY` must be configured as a Worker environment variable.
+
+## Themes and sites
+
+Core does not contain Astro, layouts, styles, or page components. On first
+bootstrap it fetches a theme from `THEME_REPOSITORY` at `THEME_REF`, validates
+the selected `THEME`, and copies it into an empty target repository. Later runs
+only write article content and generated site configuration.
+
+The theme and target marker contracts are documented in
+[Architecture](docs/architecture.md). Maintained themes belong in the separate
+[`Publume/themes`](https://github.com/Publume/themes) repository.
+
+Running the `Upgrade Publume Core` workflow synchronizes a requested Core
+release into a managed repository while preserving its `state/` directory.
+Running `Generate and publish` in `bootstrap` mode can replace the selected
+theme while preserving generated articles. Both operations are designed for
+Publume Cloud but remain available to self-hosted users.
+
+## Development
+
+```bash
+bun run typecheck
+bun test
+bun run acceptance
+```
+
+The acceptance test creates a minimal theme and temporary Git repositories at
+runtime, and uses local fixture sources plus a fake AI client. It never calls a
+real AI provider or pushes to GitHub.
+
+To run the same acceptance flow against a local Publume Themes checkout:
+
+```bash
+PUBLUME_THEME_DIRECTORY=../themes bun run acceptance
+```
+
+To run the actual GitHub workflow locally, install Docker and
+[act](https://github.com/nektos/act), configure `.env`, and run:
+
+```bash
+bun run action:local -- --bootstrap
+bun run action:local -- --preview
+```
+
+Local Action runs write to `.local/site.git` and do not push decision state to a
+remote repository. Preview requires the selected theme to provide a `dev` script.
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) before opening a pull request. Security
+issues must follow [SECURITY.md](SECURITY.md), not the public issue tracker.
+
+## License
+
+Publume Core is licensed under the [Apache License 2.0](LICENSE).

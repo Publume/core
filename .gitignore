@@ -1,0 +1,12 @@
+node_modules/
+.astro/
+dist/
+coverage/
+.env*
+!.env.example
+.dev.vars*
+.local/
+.contract/
+.wrangler/
+.DS_Store
+state/*.tmp-*
