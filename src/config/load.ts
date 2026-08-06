@@ -135,22 +135,21 @@ function loadSources(read: EnvReader): Source[] {
   })
 }
 
-function loadSite(read: EnvReader, defaultLocale: string): SiteConfig {
-  const name = read.optional('SITE_NAME', 'Publume Site')
+function loadSite(read: EnvReader, outputLanguages: readonly string[], defaultContentLanguage: string): SiteConfig {
+  const name = read.optional('SITE_NAME')
   const color = /^#[0-9a-fA-F]{6}$/
   return {
     url: read.url('SITE_URL', ['https:', 'http:']),
     name,
-    description: read.optional('SITE_DESCRIPTION', 'Independent reporting selected from verifiable sources.'),
-    tagline: read.optional('SITE_TAGLINE', 'Signal over noise.'),
-    locale: read.token('SITE_LOCALE', defaultLocale, /^[A-Za-z]{2,3}(?:-[A-Za-z0-9]{2,8})*$/),
+    description: read.optional('SITE_DESCRIPTION'),
+    tagline: read.optional('SITE_TAGLINE'),
+    locale: read.token('SITE_LOCALE', defaultContentLanguage, /^[A-Za-z]{2,3}(?:-[A-Za-z0-9]{2,8})*$/),
+    outputLanguages,
+    defaultContentLanguage,
     publisherName: read.optional('SITE_PUBLISHER_NAME', name),
     authorName: read.optional('SITE_AUTHOR_NAME', name),
     contactUrl: read.url('SITE_CONTACT_URL', ['https:', 'http:', 'mailto:']),
-    aiDisclosure: read.optional(
-      'SITE_AI_DISCLOSURE',
-      'Automation assists with selection and drafting. Every article retains its source links.',
-    ),
+    aiDisclosure: read.optional('SITE_AI_DISCLOSURE'),
     socialImageUrl: read.url('SITE_SOCIAL_IMAGE_URL', ['https:', 'http:']),
     newsletterUrl: read.url('SITE_NEWSLETTER_URL', ['https:', 'http:']),
     sponsorUrl: read.url('SITE_SPONSOR_URL', ['https:', 'http:']),
@@ -163,11 +162,10 @@ function loadSite(read: EnvReader, defaultLocale: string): SiteConfig {
     mutedColor: read.token('SITE_MUTED_COLOR', '#64748b', color),
     maxWidth: read.token('SITE_MAX_WIDTH', '1180px', /^\d{3,4}px$/),
     cardRadius: read.token('SITE_CARD_RADIUS', '16px', /^\d{1,3}px$/),
-    articleTitleMaxSize: read.token('SITE_ARTICLE_TITLE_MAX_SIZE', '3rem', /^\d{1,2}(?:\.\d+)?(?:rem|px)$/),
     showTopics: read.boolean('SITE_SHOW_TOPICS', true),
     showScore: read.boolean('SITE_SHOW_SCORE', false),
     showSources: read.boolean('SITE_SHOW_SOURCES', true),
-    footerText: read.optional('SITE_FOOTER_TEXT', 'Published with Publume.'),
+    footerText: read.optional('SITE_FOOTER_TEXT'),
   }
 }
 
@@ -205,6 +203,9 @@ export function loadConfig(env: Environment = process.env, options: { rootDir?: 
   const outputLanguages = languages.length > 0 ? languages : ['en']
   if (new Set(outputLanguages).size !== outputLanguages.length)
     throw new Error('OUTPUT_LANGUAGES must not contain duplicates')
+  const defaultContentLanguage = read.optional('DEFAULT_CONTENT_LANGUAGE', outputLanguages[0])
+  if (!outputLanguages.includes(defaultContentLanguage))
+    throw new Error('DEFAULT_CONTENT_LANGUAGE must be included in OUTPUT_LANGUAGES')
 
   const responseFormat = read.optional('AI_RESPONSE_FORMAT', 'json_object')
   if (responseFormat !== 'json_object' && responseFormat !== 'json_schema')
@@ -256,6 +257,6 @@ export function loadConfig(env: Environment = process.env, options: { rootDir?: 
       ref: read.gitRef('THEME_REF', 'main'),
       id: read.token('THEME', 'editorial', /^[a-z0-9][a-z0-9_-]{0,63}$/),
     },
-    site: loadSite(read, outputLanguages[0] ?? 'en'),
+    site: loadSite(read, outputLanguages, defaultContentLanguage),
   }
 }

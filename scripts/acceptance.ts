@@ -19,7 +19,7 @@ async function command(args: readonly string[], cwd: string): Promise<string> {
     new Response(child.stderr).text(),
     child.exited,
   ])
-  if (code !== 0) throw new Error(`${args.join(' ')} failed: ${stderr.trim()}`)
+  if (code !== 0) throw new Error(`${args.join(' ')} failed:\n${[stdout, stderr].filter(Boolean).join('\n').trim()}`)
   return stdout.trim()
 }
 
@@ -68,7 +68,9 @@ function createPorts(config: AppConfig, fetchFn: FetchLike, aiClient: AiClient):
 }
 
 const root = await mkdtemp(path.join(tmpdir(), 'publume-acceptance-'))
+const previousDeliveryConfig = process.env.DELIVERY_CONFIG
 process.env.PUBLUME_ACCEPTANCE_SECRET = 'must-not-reach-theme-build'
+process.env.DELIVERY_CONFIG = 'must-not-reach-theme-build'
 
 try {
   const targetRepository = path.join(root, 'site.git')
@@ -167,6 +169,8 @@ try {
         'https://example.test/feed.xml\nhttps://example.test/items.json\nhttps://example.test/page.html\nhttps://example.test/unavailable',
       CONTENT_INSTRUCTIONS: 'Publish important, verifiable updates for the configured audience.',
       OUTPUT_LANGUAGES: 'en,fr',
+      DEFAULT_CONTENT_LANGUAGE: 'fr',
+      SITE_LOCALE: 'zh-CN',
       PUBLISH_THRESHOLD: '0.75',
       MINIMUM_CONTENT_LENGTH: '40',
       THEME_REPOSITORY: themeRepository,
@@ -221,6 +225,19 @@ try {
       throw new Error('real theme output is missing the configured canonical site URL')
     if (!indexHtml.includes('/publication/rss.xml'))
       throw new Error('real theme output does not preserve the configured repository base path')
+    if (!indexHtml.includes('Validated fr') || indexHtml.includes('Validated en'))
+      throw new Error('default language index mixes article languages')
+    for (const localizedText of ['Publume 内容站', '最新内容', '主导航', '只保留真正重要的信号。']) {
+      if (!indexHtml.includes(localizedText))
+        throw new Error(`site interface is missing localized text: ${localizedText}`)
+    }
+    const englishIndex = await readFile(path.join(checkout, 'dist/en/index.html'), 'utf8')
+    if (!englishIndex.includes('Validated en') || englishIndex.includes('Validated fr'))
+      throw new Error('secondary language index mixes article languages')
+    if (!englishIndex.includes('最新内容'))
+      throw new Error('secondary content index did not preserve the configured interface locale')
+    if (!indexHtml.includes('hreflang="en"') || !indexHtml.includes('hreflang="fr"'))
+      throw new Error('multilingual index is missing alternate-language metadata')
     for (const output of ['rss.xml', 'sitemap-index.xml']) {
       if (!(await Bun.file(path.join(checkout, 'dist', output)).exists()))
         throw new Error(`real theme output is missing ${output}`)
@@ -228,9 +245,16 @@ try {
     const articleFile = files.find((file) => file.startsWith('src/content/articles/') && file.endsWith('.md'))
     if (!articleFile) throw new Error('real theme output has no article to inspect')
     const articleOutput = articleFile.replace('src/content/articles/', 'dist/').replace(/\.md$/, '/index.html')
+    const articleMarkdown = await readFile(path.join(checkout, articleFile), 'utf8')
     const articleHtml = await readFile(path.join(checkout, articleOutput), 'utf8')
-    if (!articleHtml.includes('Primary evidence') || !articleHtml.includes('Editorial disclosure'))
-      throw new Error('real theme article is missing provenance or disclosure content')
+    const sourceLiteral = articleMarkdown.match(/^\s+-\s+("https?:\/\/[^\n]+")\s*$/m)?.[1]
+    const sourceUrl = sourceLiteral ? (JSON.parse(sourceLiteral) as unknown) : undefined
+    if (typeof sourceUrl !== 'string' || !articleHtml.includes(sourceUrl))
+      throw new Error('real theme article is missing its source link')
+    for (const localizedText of ['来源', '编辑说明', '自动化系统协助筛选与起草']) {
+      if (!articleHtml.includes(localizedText))
+        throw new Error(`real theme article is missing localized text: ${localizedText}`)
+    }
   }
 
   await command(['git', 'config', 'user.name', 'fixture'], checkout)
@@ -283,5 +307,7 @@ try {
   )
 } finally {
   delete process.env.PUBLUME_ACCEPTANCE_SECRET
+  if (previousDeliveryConfig === undefined) delete process.env.DELIVERY_CONFIG
+  else process.env.DELIVERY_CONFIG = previousDeliveryConfig
   await rm(root, { recursive: true, force: true })
 }

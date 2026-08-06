@@ -52,20 +52,28 @@ async function targetIsEmpty(directory: string): Promise<boolean> {
 async function bootstrapTheme(config: AppConfig, targetDirectory: string): Promise<void> {
   const checkout = await checkoutTheme(config)
   try {
-    const directory = path.join(checkout.directory, 'themes', config.theme.id)
-    const marker = themeMarker.parse(JSON.parse(await readFile(path.join(directory, '.publume-theme.json'), 'utf8')))
+    const sharedDirectory = path.join(checkout.directory, 'shared')
+    const themeDirectory = path.join(checkout.directory, 'themes', config.theme.id)
+    const marker = themeMarker.parse(
+      JSON.parse(await readFile(path.join(themeDirectory, '.publume-theme.json'), 'utf8')),
+    )
     if (marker.id !== config.theme.id)
       throw new Error(`Theme marker identifies ${marker.id}, expected ${config.theme.id}`)
 
     const ignored = new Set(['.astro', '.git', 'dist', 'node_modules'])
-    await cp(directory, targetDirectory, {
-      recursive: true,
-      force: true,
-      filter: (source) => {
-        const relativePath = path.relative(directory, source)
-        return relativePath !== '.publume-theme.json' && !relativePath.split(path.sep).some((part) => ignored.has(part))
-      },
-    })
+    const copyPart = async (directory: string) =>
+      cp(directory, targetDirectory, {
+        recursive: true,
+        force: true,
+        filter: (source) => {
+          const relativePath = path.relative(directory, source)
+          return (
+            relativePath !== '.publume-theme.json' && !relativePath.split(path.sep).some((part) => ignored.has(part))
+          )
+        },
+      })
+    await copyPart(sharedDirectory)
+    await copyPart(themeDirectory)
     const articleDirectory = path.join(targetDirectory, 'src/content/articles')
     // Theme examples are useful in the source repository, but generated content is owned exclusively by Core.
     await rm(articleDirectory, { recursive: true, force: true })
@@ -122,9 +130,11 @@ async function ensureTheme(config: AppConfig, targetDirectory: string, allowRepl
 }
 
 async function buildSite(directory: string): Promise<void> {
+  const excludedVariables = new Set(['DELIVERY_CONFIG'])
   const environment = Object.fromEntries(
     Object.entries(process.env).filter(
-      ([name, value]) => value !== undefined && !/(?:KEY|TOKEN|SECRET|PASSWORD|CREDENTIAL)/i.test(name),
+      ([name, value]) =>
+        value !== undefined && !excludedVariables.has(name) && !/(?:KEY|TOKEN|SECRET|PASSWORD|CREDENTIAL)/i.test(name),
     ),
   ) as Record<string, string>
   // Theme scripts are trusted code, but common secret-shaped variables are still withheld as defense in depth.

@@ -35,6 +35,7 @@ repository and permission to read and write repository contents.
 | `GATE_PROMPT` | no | built in | Publication decision instructions. |
 | `ARTICLE_PROMPT` | no | built in | Article generation instructions. |
 | `OUTPUT_LANGUAGES` | no | `en` | Comma- or newline-separated language tags. |
+| `DEFAULT_CONTENT_LANGUAGE` | no | first output language | Language shown at the site root; it must be included in `OUTPUT_LANGUAGES`. |
 | `PUBLISH_THRESHOLD` | no | `0.75` | Minimum gate score from 0 to 1. |
 | `DEDUPLICATION_CONTEXT_SIZE` | no | `50` | Recent approved items supplied to the AI gate for semantic duplicate detection; `0` disables this context. |
 | `MAX_ITEM_AGE_HOURS` | no | `24` | Maximum candidate age. |
@@ -100,14 +101,14 @@ target repository:
 | Name | Default |
 | --- | --- |
 | `SITE_URL` | empty |
-| `SITE_NAME` | `Publume Site` |
-| `SITE_DESCRIPTION` | `Independent reporting selected from verifiable sources.` |
-| `SITE_TAGLINE` | `Signal over noise.` |
-| `SITE_LOCALE` | first output language |
+| `SITE_NAME` | empty; Themes supplies a localized default |
+| `SITE_DESCRIPTION` | empty; Themes supplies a localized default |
+| `SITE_TAGLINE` | empty; Themes supplies a localized default |
+| `SITE_LOCALE` | default content language |
 | `SITE_PUBLISHER_NAME` | site name |
 | `SITE_AUTHOR_NAME` | site name |
 | `SITE_CONTACT_URL` | empty |
-| `SITE_AI_DISCLOSURE` | source-linked automation disclosure |
+| `SITE_AI_DISCLOSURE` | empty; Themes supplies a localized default |
 | `SITE_SOCIAL_IMAGE_URL` | empty |
 | `SITE_NEWSLETTER_URL` | empty |
 | `SITE_SPONSOR_URL` | empty |
@@ -120,11 +121,10 @@ target repository:
 | `SITE_MUTED_COLOR` | `#64748b` |
 | `SITE_MAX_WIDTH` | `1180px` |
 | `SITE_CARD_RADIUS` | `16px` |
-| `SITE_ARTICLE_TITLE_MAX_SIZE` | `3rem` |
 | `SITE_SHOW_TOPICS` | `true` |
 | `SITE_SHOW_SCORE` | `false` |
 | `SITE_SHOW_SOURCES` | `true` |
-| `SITE_FOOTER_TEXT` | `Published with Publume.` |
+| `SITE_FOOTER_TEXT` | empty; Themes supplies a localized default |
 
 `SITE_URL` should be the final public origin, such as `https://example.com`. It
 enables canonical URLs, social metadata, and sitemap generation. Themes decide

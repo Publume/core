@@ -63,7 +63,9 @@ describe('configuration and source boundaries', () => {
     expect(config.delivery.channels).toEqual([])
     expect(config.site.url).toBe('')
     expect(config.site.locale).toBe('en')
-    expect(config.site.publisherName).toBe('Publume Site')
+    expect(config.site.outputLanguages).toEqual(['en'])
+    expect(config.site.defaultContentLanguage).toBe('en')
+    expect(config.site.publisherName).toBe('')
     expect(config.theme).toEqual({ repository: 'Publume/themes', ref: 'main', id: 'editorial' })
   })
 
@@ -138,6 +140,9 @@ describe('configuration and source boundaries', () => {
     )
     expect(() => loadConfig(configEnv({ DEDUPLICATION_CONTEXT_SIZE: '201' }))).toThrow(
       'DEDUPLICATION_CONTEXT_SIZE must be between 0 and 200',
+    )
+    expect(() => loadConfig(configEnv({ OUTPUT_LANGUAGES: 'en,fr', DEFAULT_CONTENT_LANGUAGE: 'de' }))).toThrow(
+      'DEFAULT_CONTENT_LANGUAGE must be included in OUTPUT_LANGUAGES',
     )
   })
 

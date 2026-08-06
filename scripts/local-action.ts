@@ -72,6 +72,10 @@ async function main(): Promise<void> {
     ['GATE_PROMPT', process.env.GATE_PROMPT || ''],
     ['ARTICLE_PROMPT', process.env.ARTICLE_PROMPT || ''],
     ['OUTPUT_LANGUAGES', process.env.OUTPUT_LANGUAGES || 'en'],
+    [
+      'DEFAULT_CONTENT_LANGUAGE',
+      process.env.DEFAULT_CONTENT_LANGUAGE || process.env.OUTPUT_LANGUAGES?.split(/[\n,]/)[0]?.trim() || 'en',
+    ],
     ['PUBLISH_THRESHOLD', process.env.PUBLISH_THRESHOLD || '0.75'],
     ['DEDUPLICATION_CONTEXT_SIZE', process.env.DEDUPLICATION_CONTEXT_SIZE || '50'],
     ['TARGET_BRANCH', process.env.TARGET_BRANCH || 'main'],
@@ -86,9 +90,15 @@ async function main(): Promise<void> {
     ['THEME', process.env.THEME || 'editorial'],
     ['SITE_URL', process.env.SITE_URL || ''],
     ['SITE_NAME', process.env.SITE_NAME || 'Publume Site'],
-    ['SITE_DESCRIPTION', process.env.SITE_DESCRIPTION || 'Independent reporting selected from verifiable sources.'],
-    ['SITE_TAGLINE', process.env.SITE_TAGLINE || 'Signal over noise.'],
-    ['SITE_LOCALE', process.env.SITE_LOCALE || process.env.OUTPUT_LANGUAGES?.split(/[\n,]/)[0]?.trim() || 'en'],
+    ['SITE_DESCRIPTION', process.env.SITE_DESCRIPTION || ''],
+    ['SITE_TAGLINE', process.env.SITE_TAGLINE || ''],
+    [
+      'SITE_LOCALE',
+      process.env.SITE_LOCALE ||
+        process.env.DEFAULT_CONTENT_LANGUAGE ||
+        process.env.OUTPUT_LANGUAGES?.split(/[\n,]/)[0]?.trim() ||
+        'en',
+    ],
     ['SITE_PUBLISHER_NAME', process.env.SITE_PUBLISHER_NAME || process.env.SITE_NAME || 'Publume Site'],
     ['SITE_AUTHOR_NAME', process.env.SITE_AUTHOR_NAME || process.env.SITE_NAME || 'Editorial Desk'],
     ['SITE_CONTACT_URL', process.env.SITE_CONTACT_URL || ''],
@@ -105,11 +115,10 @@ async function main(): Promise<void> {
     ['SITE_MUTED_COLOR', process.env.SITE_MUTED_COLOR || '#64748b'],
     ['SITE_MAX_WIDTH', process.env.SITE_MAX_WIDTH || '1180px'],
     ['SITE_CARD_RADIUS', process.env.SITE_CARD_RADIUS || '16px'],
-    ['SITE_ARTICLE_TITLE_MAX_SIZE', process.env.SITE_ARTICLE_TITLE_MAX_SIZE || '3rem'],
     ['SITE_SHOW_TOPICS', process.env.SITE_SHOW_TOPICS || 'true'],
     ['SITE_SHOW_SCORE', process.env.SITE_SHOW_SCORE || 'false'],
     ['SITE_SHOW_SOURCES', process.env.SITE_SHOW_SOURCES || 'true'],
-    ['SITE_FOOTER_TEXT', process.env.SITE_FOOTER_TEXT || 'Published with Publume.'],
+    ['SITE_FOOTER_TEXT', process.env.SITE_FOOTER_TEXT || ''],
     ['PUBLUME_LOCAL', 'true'],
   ]
   const actArguments = [

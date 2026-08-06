@@ -65,8 +65,9 @@ the actual endpoint and model.
 
 ## Theme contract
 
-A theme repository contains one or more themes under `themes/<theme-id>`.
-Every theme root must include `.publume-theme.json`:
+A theme repository contains one shared static-site runtime under `shared/` and
+one or more visual overlays under `themes/<theme-id>`. Every overlay root must
+include `.publume-theme.json`:
 
 ```json
 {
@@ -75,7 +76,8 @@ Every theme root must include `.publume-theme.json`:
 }
 ```
 
-Core validates this marker before copying files. A bootstrapped target receives
+Core copies `shared/`, validates the selected marker, then overlays the selected
+theme. A bootstrapped target receives
 `.publume-site.json`:
 
 ```json
@@ -94,13 +96,18 @@ This is defense in depth, not a sandbox. Theme build scripts execute code with t
 runner user's filesystem and network permissions. Only use reviewed and trusted
 theme repositories and pin a reviewed release.
 
-The theme must provide:
+The shared runtime must provide:
 
 - a `package.json` with a `build` script;
 - an optional `dev` script when local preview is supported;
 - a writable `src/content/articles/` directory;
 - support for `src/data/site-config.generated.json`;
-- its own deployment workflow and ignored build output.
+- a deployment workflow and ignored build output;
+- the only interface translation catalog and all language-aware routes.
+
+Each visual overlay provides `Shell.astro`, `Home.astro`, `Article.astro`, and
+`theme.css` under `src/theme/`. It does not duplicate routes, feeds,
+translations, build configuration, or dependencies.
 
 Core does not assume Astro or another specific static site generator.
 

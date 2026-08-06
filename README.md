@@ -108,10 +108,11 @@ two hours. `GITHUB_TOKEN` must be configured as a Cloudflare Worker secret, and
 
 ## Themes and sites
 
-Core does not contain Astro, layouts, styles, or page components. On first
-bootstrap it fetches a theme from `THEME_REPOSITORY` at `THEME_REF`, validates
-the selected `THEME`, and copies it into an empty target repository. Later runs
-only write article content and generated site configuration.
+Core does not contain Astro, layouts, styles, translations, or page components.
+On first bootstrap it fetches `THEME_REPOSITORY` at `THEME_REF`, copies its
+shared site runtime, validates the selected `THEME`, and overlays that visual
+theme into an empty target repository. Later runs only write article content
+and generated site configuration.
 
 The theme and target marker contracts are documented in
 [Architecture](docs/architecture.md). Maintained themes belong in the separate

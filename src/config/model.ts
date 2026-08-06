@@ -83,6 +83,8 @@ export type SiteConfig = {
   readonly description: string
   readonly tagline: string
   readonly locale: string
+  readonly outputLanguages: readonly string[]
+  readonly defaultContentLanguage: string
   readonly publisherName: string
   readonly authorName: string
   readonly contactUrl: string
@@ -99,7 +101,6 @@ export type SiteConfig = {
   readonly mutedColor: string
   readonly maxWidth: string
   readonly cardRadius: string
-  readonly articleTitleMaxSize: string
   readonly showTopics: boolean
   readonly showScore: boolean
   readonly showSources: boolean
