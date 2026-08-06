@@ -210,13 +210,15 @@ async function processCandidate(candidate: Candidate, context: RunContext): Prom
 
 async function publish(articles: readonly Article[], context: RunContext): Promise<string | undefined> {
   const { config, ports, state, configHash, updatedAt } = context
-  if (articles.length === 0) return undefined
   try {
     const requiredDeliveries = articles.length * ports.delivery.length
     if (state.pendingDeliveries.length + requiredDeliveries > config.state.maxPendingDeliveries)
       throw new Error('Pending delivery queue is full')
     const commit = await ports.site.publish(articles, 'content')
-    if (!commit) throw new Error('Target publish produced no commit')
+    if (!commit) {
+      if (articles.length > 0) throw new Error('Target publish produced no commit')
+      return undefined
+    }
     for (const article of articles) {
       const previous = state.decisions[article.decisionKey]
       state.decisions[article.decisionKey] = decisionRecord(article.decisionKey, 'published', configHash, updatedAt, {

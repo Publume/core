@@ -111,8 +111,9 @@ two hours. `GITHUB_TOKEN` must be configured as a Cloudflare Worker secret, and
 Core does not contain Astro, layouts, styles, translations, or page components.
 On first bootstrap it fetches `THEME_REPOSITORY` at `THEME_REF`, copies its
 shared site runtime, validates the selected `THEME`, and overlays that visual
-theme into an empty target repository. Later runs only write article content
-and generated site configuration.
+theme into an empty target repository. The overlay owns its visual tokens in
+`theme.css`; later runs only write article content and generated site identity
+and behavior configuration.
 
 The theme and target marker contracts are documented in
 [Architecture](docs/architecture.md). Maintained themes belong in the separate

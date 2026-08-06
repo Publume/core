@@ -160,6 +160,14 @@ export function createSitePublisher(config: AppConfig): SitePublisher {
       try {
         const bootstrapped = await ensureTheme(config, target.directory, mode === 'bootstrap')
         await writeSiteContent(config.site, target.directory, mode === 'bootstrap' ? [] : articles)
+        if (mode === 'content' && articles.length === 0 && !bootstrapped) {
+          const diff = await runCommand(
+            ['git', 'diff', '--quiet', '--', 'src/data/site-config.generated.json'],
+            target.directory,
+          )
+          if (diff.code === 0) return undefined
+          if (diff.code !== 1) throw new Error(`Site configuration comparison failed: ${diff.stderr.trim()}`)
+        }
         await buildSite(target.directory)
         await git(['config', 'user.name', 'publume[bot]'], target.directory)
         await git(['config', 'user.email', '41898282+github-actions[bot]@users.noreply.github.com'], target.directory)

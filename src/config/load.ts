@@ -137,6 +137,7 @@ function loadSources(read: EnvReader): Source[] {
 
 function loadSite(read: EnvReader, outputLanguages: readonly string[], defaultContentLanguage: string): SiteConfig {
   const name = read.optional('SITE_NAME')
+  // Existing version-1 Websites still parse these fields; current Themes own and ignore them.
   const color = /^#[0-9a-fA-F]{6}$/
   return {
     url: read.url('SITE_URL', ['https:', 'http:']),

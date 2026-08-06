@@ -112,21 +112,12 @@ target repository:
 | `SITE_SOCIAL_IMAGE_URL` | empty |
 | `SITE_NEWSLETTER_URL` | empty |
 | `SITE_SPONSOR_URL` | empty |
-| `SITE_THEME` | `default` |
-| `SITE_PRIMARY_COLOR` | `#2563eb` |
-| `SITE_ACCENT_COLOR` | `#0891b2` |
-| `SITE_BACKGROUND_COLOR` | `#ffffff` |
-| `SITE_SURFACE_COLOR` | `#f8fafc` |
-| `SITE_TEXT_COLOR` | `#0f172a` |
-| `SITE_MUTED_COLOR` | `#64748b` |
-| `SITE_MAX_WIDTH` | `1180px` |
-| `SITE_CARD_RADIUS` | `16px` |
 | `SITE_SHOW_TOPICS` | `true` |
 | `SITE_SHOW_SCORE` | `false` |
 | `SITE_SHOW_SOURCES` | `true` |
 | `SITE_FOOTER_TEXT` | empty; Themes supplies a localized default |
 
 `SITE_URL` should be the final public origin, such as `https://example.com`. It
-enables canonical URLs, social metadata, and sitemap generation. Themes decide
-how the remaining values affect presentation. Core validates URLs, locale
-tags, color values, dimensions, booleans, and theme tokens before publishing.
+enables canonical URLs, social metadata, and sitemap generation. The selected
+theme owns its colors, layout width, and component geometry in `theme.css`;
+Core validates the remaining URLs, locale tags, and booleans before publishing.

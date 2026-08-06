@@ -97,7 +97,7 @@ function testPorts(config: AppConfig, options: PortOptions = {}): PipelinePorts 
 }
 
 describe('pipeline idempotence', () => {
-  it('does not call AI or publish again for the same decision key', async () => {
+  it('does not call AI again but still checks whether generated site configuration changed', async () => {
     const root = `/tmp/publume-pipeline-${Date.now()}-${Math.random()}`
     const config = loadConfig(configEnv({ OUTPUT_LANGUAGES: 'en,fr' }), { rootDir: root })
     const calls = { count: 0 }
@@ -117,7 +117,7 @@ describe('pipeline idempotence', () => {
     expect(first.published).toBe(2)
     expect(second.published).toBe(0)
     expect(calls.count).toBe(2)
-    expect(publishes).toBe(1)
+    expect(publishes).toBe(2)
   })
 
   it('persists failed deliveries and retries them without regenerating the article', async () => {
@@ -194,7 +194,7 @@ describe('pipeline idempotence', () => {
     expect(calls.count).toBe(2)
   })
 
-  it('does not generate or publish when the gate rejects a candidate', async () => {
+  it('does not generate an article when the gate rejects a candidate but still synchronizes site configuration', async () => {
     const root = `/tmp/publume-reject-${Date.now()}-${Math.random()}`
     const config = loadConfig(configEnv(), { rootDir: root })
     let calls = 0
@@ -220,7 +220,7 @@ describe('pipeline idempotence', () => {
         aiClient,
         publish: async () => {
           publishes += 1
-          return 'never'
+          return 'config-commit'
         },
       }),
       { allowTestSources: true },
@@ -230,7 +230,8 @@ describe('pipeline idempotence', () => {
     expect(result.generated).toBe(0)
     expect(result.published).toBe(0)
     expect(calls).toBe(1)
-    expect(publishes).toBe(0)
+    expect(publishes).toBe(1)
+    expect(result.targetCommitSha).toBe('config-commit')
   })
 
   it('supplies earlier approved candidates to later gates for semantic deduplication', async () => {
