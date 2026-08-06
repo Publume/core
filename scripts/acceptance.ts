@@ -233,6 +233,8 @@ try {
       throw new Error('real theme article is missing provenance or disclosure content')
   }
 
+  await command(['git', 'config', 'user.name', 'fixture'], checkout)
+  await command(['git', 'config', 'user.email', 'fixture@example.test'], checkout)
   await writeFile(path.join(checkout, 'obsolete-theme-file.txt'), 'old theme file\n')
   await command(['git', 'add', 'obsolete-theme-file.txt'], checkout)
   await command(['git', 'commit', '-m', 'test: add obsolete theme file'], checkout)
