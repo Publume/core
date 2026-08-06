@@ -78,7 +78,8 @@ try {
     : await createThemeRepository(root, command)
   const themeId = themeSource ? (process.env.PUBLUME_THEME_ID ?? 'editorial') : 'fixture'
   const alternateThemeId = await addAlternateTheme(themeRepository, themeId)
-  await command(['git', 'init', '--bare', targetRepository], root)
+  // Keep the bare repository HEAD different from the configured publishing branch.
+  await command(['git', 'init', '--bare', '--initial-branch', 'unrelated-default', targetRepository], root)
 
   const fetchFixture: FetchLike = async (input) => {
     const url = String(input)
@@ -193,7 +194,7 @@ try {
     throw new Error(`second run was not idempotent: ${JSON.stringify({ second, calls: calls.count })}`)
 
   const checkout = path.join(root, 'checkout')
-  await command(['git', 'clone', targetRepository, checkout], root)
+  await command(['git', 'clone', '--branch', config.target.branch, targetRepository, checkout], root)
   const files = (await command(['git', 'ls-tree', '-r', '--name-only', 'HEAD'], checkout)).split('\n')
   const articleCount = files.filter((file) => file.startsWith('src/content/articles/') && file.endsWith('.md')).length
   if (articleCount !== 6) throw new Error(`expected 6 article files, found ${articleCount}`)
@@ -239,7 +240,7 @@ try {
   await createSitePublisher({ ...config, theme: { ...config.theme, id: alternateThemeId } }).publish([], 'bootstrap')
 
   const changedCheckout = path.join(root, 'changed-checkout')
-  await command(['git', 'clone', targetRepository, changedCheckout], root)
+  await command(['git', 'clone', '--branch', config.target.branch, targetRepository, changedCheckout], root)
   const changedFiles = (await command(['git', 'ls-tree', '-r', '--name-only', 'HEAD'], changedCheckout)).split('\n')
   const changedArticles = changedFiles.filter(
     (file) => file.startsWith('src/content/articles/') && file.endsWith('.md'),

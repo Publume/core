@@ -23,7 +23,11 @@ async function cloneTarget(config: AppConfig): Promise<Checkout> {
     await rm(directory, { recursive: true, force: true })
     throw new Error(`Target clone failed: ${result.stderr.trim()}`)
   }
-  await git(['checkout', '-B', config.target.branch], directory)
+  const remoteBranch = `refs/remotes/origin/${config.target.branch}`
+  const branchLookup = await runCommand(['git', 'show-ref', '--verify', '--quiet', remoteBranch], directory)
+  if (branchLookup.code === 0) await git(['checkout', '-B', config.target.branch, remoteBranch], directory)
+  else if (branchLookup.code === 1) await git(['checkout', '-B', config.target.branch], directory)
+  else throw new Error(`Target branch lookup failed: ${branchLookup.stderr.trim()}`)
   return { directory, cleanup: () => rm(directory, { recursive: true, force: true }) }
 }
 
