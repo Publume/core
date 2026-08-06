@@ -13,7 +13,11 @@ and secrets instead.
 | `DELIVERY_CONFIG` | Optional JSON array containing notification endpoints and their credentials. |
 
 Use a fine-grained GitHub token with access only to the selected target
-repository and permission to read and write repository contents.
+repository. It needs **Contents: Read and write** for every publication and
+**Workflows: Read and write** when bootstrap installs the target repository's
+Pages workflow. After bootstrap, a self-hosted operator can rotate to a
+Contents-only token if future runs will never replace the theme or reinstall
+the site workflow.
 
 ## AI endpoint
 

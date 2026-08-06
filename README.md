@@ -48,7 +48,25 @@ threshold are rejected before they reach the target repository.
 - A writable target Git repository
 - A compatible theme repository for first-time site bootstrap
 
-## Quick start
+## Deploy from GitHub
+
+For a self-hosted deployment, start from the green **Use this template** button
+on [`Publume/core`](https://github.com/Publume/core). Do not fork the repository
+or use the local-development commands below as the deployment entry point.
+
+The shortest working path is:
+
+1. create your own Core repository from this template;
+2. create a separate, empty public repository for the website;
+3. enable GitHub Actions as the website repository's Pages source;
+4. add the required Core repository variables and secrets;
+5. run **Generate and publish** once in `bootstrap` mode.
+
+Follow the GitHub manual deployment guide in
+[English](docs/deployment.en.md) or [简体中文](docs/deployment.md) for the exact
+settings, token permissions, success checks, and common failure fixes.
+
+## Local quick start
 
 ```bash
 git clone https://github.com/Publume/core.git
@@ -99,8 +117,16 @@ Store credentials as repository secrets:
 - `TARGET_REPO_TOKEN`
 - `DELIVERY_CONFIG` when notification channels are enabled
 
+For the first bootstrap, `TARGET_REPO_TOKEN` must be scoped to the target site
+repository with both Contents and Workflows read/write permission. See the
+manual deployment guide before creating it.
+
 Store non-secret configuration as repository variables. See
 [Configuration](docs/configuration.md) for the complete list.
+
+For first-time setup, repository creation, and Pages configuration, follow the
+GitHub manual deployment guide in [English](docs/deployment.en.md) or
+[简体中文](docs/deployment.md).
 
 The optional Worker in [`scheduler/`](scheduler/) dispatches the workflow every
 two hours. `GITHUB_TOKEN` must be configured as a Cloudflare Worker secret, and
