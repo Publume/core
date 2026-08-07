@@ -4,7 +4,7 @@ import { createFileDecisionStore } from './adapters/file-decisions'
 import { createOpenAiClient } from './adapters/openai'
 import { createSitePublisher } from './adapters/site-publisher'
 import { createSourceReader } from './adapters/sources/reader'
-import { runPipeline } from './app/pipeline'
+import { type RunOptions, runPipeline } from './app/pipeline'
 import type { PipelinePorts } from './app/ports'
 import { loadConfig } from './config/load'
 import type { AppConfig } from './config/model'
@@ -19,10 +19,18 @@ function createPorts(config: AppConfig): PipelinePorts {
   }
 }
 
+function runMode(argumentsList: readonly string[]): RunOptions['mode'] {
+  if (argumentsList.includes('--initial')) return 'initial'
+  if (argumentsList.includes('--bootstrap')) return 'bootstrap'
+  const explicitMode = argumentsList.find((argument) => argument.startsWith('--mode='))?.slice('--mode='.length)
+  if (explicitMode === undefined || explicitMode === 'run') return 'run'
+  if (explicitMode === 'initial' || explicitMode === 'bootstrap') return explicitMode
+  throw new Error(`Unsupported run mode: ${explicitMode}`)
+}
+
 async function main(): Promise<void> {
   const config = loadConfig()
-  const mode = process.argv.includes('--bootstrap') ? 'bootstrap' : 'run'
-  console.log(JSON.stringify(await runPipeline(config, createPorts(config), { mode })))
+  console.log(JSON.stringify(await runPipeline(config, createPorts(config), { mode: runMode(process.argv.slice(2)) })))
 }
 
 if (import.meta.main) await main()

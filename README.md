@@ -46,7 +46,7 @@ threshold are rejected before they reach the target repository.
 - Git 2.39 or newer
 - An OpenAI-compatible chat completions endpoint
 - A writable target Git repository
-- A compatible theme repository for first-time site bootstrap
+- A compatible theme repository for first-time site creation
 
 ## Deploy from GitHub
 
@@ -60,7 +60,7 @@ The shortest working path is:
 2. create a separate, empty public repository for the website;
 3. enable GitHub Actions as the website repository's Pages source;
 4. add the required Core repository variables and secrets;
-5. run **Generate and publish** once in `bootstrap` mode.
+5. run **Generate and publish** once in `initial` mode.
 
 Follow the GitHub manual deployment guide in
 [English](docs/deployment.en.md) or [简体中文](docs/deployment.md) for the exact
@@ -90,11 +90,11 @@ SOURCE_URLS="https://source.example/feed.xml"
 CONTENT_INSTRUCTIONS="Describe the audience, subject, and publication standard."
 ```
 
-Then verify the repository and bootstrap the target site:
+Then verify the repository and create the target site with baseline content:
 
 ```bash
 bun run check
-bun run bootstrap
+bun run initial
 ```
 
 Run the normal pipeline with:
@@ -117,7 +117,7 @@ Store credentials as repository secrets:
 - `TARGET_REPO_TOKEN`
 - `DELIVERY_CONFIG` when notification channels are enabled
 
-For the first bootstrap, `TARGET_REPO_TOKEN` must be scoped to the target site
+For the first `initial` run, `TARGET_REPO_TOKEN` must be scoped to the target site
 repository with both Contents and Workflows read/write permission. See the
 manual deployment guide before creating it.
 
@@ -135,7 +135,7 @@ two hours. `GITHUB_TOKEN` must be configured as a Cloudflare Worker secret, and
 ## Themes and sites
 
 Core does not contain Astro, layouts, styles, translations, or page components.
-On first bootstrap it fetches `THEME_REPOSITORY` at `THEME_REF`, copies its
+On the first `initial` run it fetches `THEME_REPOSITORY` at `THEME_REF`, copies its
 shared site runtime, validates the selected `THEME`, and overlays that visual
 theme into an empty target repository. The overlay owns its visual tokens in
 `theme.css`; later runs only write article content and generated site identity
@@ -147,9 +147,11 @@ The theme and target marker contracts are documented in
 
 Running the `Upgrade Publume Core` workflow synchronizes a requested Core
 release into a managed repository while preserving its `state/` directory.
-Running `Generate and publish` in `bootstrap` mode can replace the selected
-theme while preserving generated articles. Both operations are designed for
-Publume Cloud but remain available to self-hosted users.
+Running `Generate and publish` in `bootstrap` mode replaces the selected theme
+while preserving generated articles. Both operations are designed for Publume
+Cloud but remain available to self-hosted users. A successful first `initial`
+run installs the theme, executes the content pipeline, and publishes at least
+one validated article; it never reports an empty site as successfully ready.
 
 ## Development
 
@@ -173,6 +175,7 @@ To run the actual GitHub workflow locally, install Docker and
 [act](https://github.com/nektos/act), configure `.env`, and run:
 
 ```bash
+bun run action:local -- --initial
 bun run action:local -- --bootstrap
 bun run action:local -- --preview
 ```

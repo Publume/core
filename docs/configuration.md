@@ -14,8 +14,8 @@ and secrets instead.
 
 Use a fine-grained GitHub token with access only to the selected target
 repository. It needs **Contents: Read and write** for every publication and
-**Workflows: Read and write** when bootstrap installs the target repository's
-Pages workflow. After bootstrap, a self-hosted operator can rotate to a
+**Workflows: Read and write** when the initial run installs the target repository's
+Pages workflow. After the initial deployment, a self-hosted operator can rotate to a
 Contents-only token if future runs will never replace the theme or reinstall
 the site workflow.
 

@@ -28,8 +28,9 @@ async function ensureDocker(): Promise<void> {
 async function main(): Promise<void> {
   const argumentsList = new Set(process.argv.slice(2))
   const preview = argumentsList.has('--preview')
+  const initial = argumentsList.has('--initial') || process.argv.includes('--mode=initial')
   const bootstrap = argumentsList.has('--bootstrap') || process.argv.includes('--mode=bootstrap')
-  const mode = bootstrap ? 'bootstrap' : 'run'
+  const mode = initial ? 'initial' : bootstrap ? 'bootstrap' : 'run'
   await ensureDocker()
 
   const root = process.cwd()

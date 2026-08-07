@@ -45,7 +45,7 @@ You must use the repository template. Do not fork it, and do not start by clonin
 5. After creating it, open **Settings → Pages**.
 6. Under **Build and deployment → Source**, select **GitHub Actions**.
 
-The first Core `bootstrap` writes the complete site and its Pages workflow into this empty repository. If the repository already
+The first Core `initial` run writes the complete site, baseline content, and its Pages workflow into this empty repository. If the repository already
 contains ordinary files and has no `.publume-site.json`, Core refuses to overwrite it.
 
 Your Pages URL is normally:
@@ -63,7 +63,7 @@ If the Website repository is named `YOUR-USERNAME.github.io`, the URL is `https:
 2. Click **Generate new token** and set a reasonable expiration date.
 3. Under **Repository access**, select **Only select repositories**, then select only the new Website repository.
 4. Under **Repository permissions**, set **Contents** to **Read and write**.
-5. Set **Workflows** to **Read and write** as well. The first `bootstrap` writes
+5. Set **Workflows** to **Read and write** as well. The first `initial` run writes
    `.github/workflows/pages.yml`; GitHub rejects that push without this permission.
 6. Create the token and copy it immediately. GitHub does not show it again.
 
@@ -108,7 +108,7 @@ These optional variables make the first page use the intended language and site 
 
 ### Choose a site template
 
-`THEME` selects the site template installed by the first `bootstrap`. It defaults to `editorial`. The current
+`THEME` selects the site template installed by the first `initial` run. It defaults to `editorial`. The current
 [`Publume/themes`](https://github.com/Publume/themes) repository provides:
 
 | `THEME` value | Best suited for |
@@ -184,7 +184,7 @@ channel configurations are:
 Feishu, DingTalk, and WeCom bots must accept an ordinary text request; the current adapters do not calculate an additional
 platform signature. To disable all notifications, delete `DELIVERY_CONFIG` or set it to `[]`.
 
-Notifications are sent only after a normal `run` publishes a new article. `bootstrap` and runs with no new article send nothing.
+Notifications are sent after `initial` or a normal `run` publishes a new article. `bootstrap` and runs with no new article send nothing.
 Check the run summary afterward:
 
 - `deliveriesSent`: notifications successfully sent in this run;
@@ -197,19 +197,19 @@ failure does not roll back an already published article; Core persists the pendi
 All other variables have defaults. See [Configuration](configuration.md) for thresholds, prompts, delivery, and multilingual
 settings.
 
-## 5. Run `bootstrap` once
+## 5. Run `initial` once
 
 1. Open **Actions** in the Core repository.
 2. Select **Generate and publish** in the left sidebar.
 3. Click **Run workflow**.
-4. Select the `main` branch and choose `bootstrap` for **Run mode**.
+4. Select the `main` branch and choose `initial` for **Run mode**.
 5. Click the green **Run workflow** button and wait for the run to finish.
 
 A successful first deployment must meet all four conditions:
 
 1. **Generate and publish** is green in the Core repository;
-2. its run summary contains a non-empty `targetCommitSha`; `published: 0` is expected in `bootstrap` mode;
-3. the Website repository contains a `chore: bootstrap site` commit;
+2. its run summary contains a non-empty `targetCommitSha` and `published` is at least `1`;
+3. the Website repository contains a `content: publish validated articles` commit with generated article files;
 4. **Deploy site** is green in the Website repository, and the URL shown under **Settings → Pages** opens successfully.
 
 The first Pages deployment can take a minute or two. A successful Core workflow alone does not prove that the website is live;
@@ -221,8 +221,9 @@ After the first site deployment succeeds, return to **Generate and publish** in 
 **Run mode** set to `run`. A normal run reads the real sources, calls the AI endpoint, and publishes only content that passes the
 filters and score threshold.
 
-`published: 0` can still be a successful run: no new item met the publication standard. Do not use `bootstrap` for ordinary
-content runs. `bootstrap` is only for the first deployment or an intentional theme replacement.
+`published: 0` can still be a successful normal run: no new item met the publication standard. In `initial`, zero validated
+articles is an explicit failure so an empty site cannot be reported as ready. Use `bootstrap`, not `initial`, for an intentional
+theme replacement.
 
 ## Common failures
 

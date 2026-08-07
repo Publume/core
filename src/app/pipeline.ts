@@ -33,7 +33,7 @@ export type RunSummary = {
 }
 
 export type RunOptions = {
-  readonly mode?: 'run' | 'bootstrap'
+  readonly mode?: 'run' | 'initial' | 'bootstrap'
   readonly allowTestSources?: boolean
   readonly now?: Date
 }
@@ -322,6 +322,11 @@ export async function runPipeline(
   for (const candidate of selection.candidates) {
     articles.push(...(await processCandidate(candidate, context)))
   }
+
+  if (options.mode === 'initial' && articles.length === 0)
+    throw new Error(
+      'Initial deployment requires at least one validated article, but no candidate passed the publication gate',
+    )
 
   const commit = await publish(articles, context)
   const currentDelivery = await deliverPending(context)

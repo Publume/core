@@ -111,15 +111,15 @@ translations, build configuration, or dependencies.
 
 Core does not assume Astro or another specific static site generator.
 
-Bootstrap mode is also the explicit theme-replacement boundary. If a compatible
+Bootstrap mode is the explicit theme-replacement boundary. If a compatible
 target marker names a different theme, Core preserves generated articles,
 removes files owned by the previous theme, installs the selected theme, rebuilds
 the site, and commits the replacement. Normal content runs still fail closed on
 a theme mismatch.
 
-A theme may ship sample articles for standalone development. During bootstrap,
-Core clears `src/content/articles/` and leaves only `.gitkeep`; generated
-articles are the sole production content in that path.
+A theme may ship sample articles for standalone development. During initial deployment,
+Core clears those examples before writing validated generated articles;
+generated articles are the sole production content in that path.
 
 ## State and idempotence
 

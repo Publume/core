@@ -97,6 +97,68 @@ function testPorts(config: AppConfig, options: PortOptions = {}): PipelinePorts 
 }
 
 describe('pipeline idempotence', () => {
+  it('publishes validated baseline content during initial deployment', async () => {
+    const root = `/tmp/publume-initial-${Date.now()}-${Math.random()}`
+    const config = loadConfig(configEnv(), { rootDir: root })
+    const calls = { count: 0 }
+    let publishedMode: 'content' | 'bootstrap' | undefined
+
+    const result = await runPipeline(
+      config,
+      testPorts(config, {
+        aiClient: fakeAi(calls),
+        publish: async (articles, mode) => {
+          expect(articles).toHaveLength(1)
+          publishedMode = mode
+          return 'initial-commit'
+        },
+      }),
+      { mode: 'initial', allowTestSources: true },
+    )
+
+    expect(result).toMatchObject({ generated: 1, published: 1, targetCommitSha: 'initial-commit' })
+    expect(calls.count).toBe(2)
+    expect(publishedMode).toBe('content')
+  })
+
+  it('fails initial deployment instead of deploying an empty site when no candidate is publishable', async () => {
+    const root = `/tmp/publume-empty-initial-${Date.now()}-${Math.random()}`
+    const config = loadConfig(configEnv({ MINIMUM_CONTENT_LENGTH: '80' }), { rootDir: root })
+    let publishes = 0
+
+    await expect(
+      runPipeline(
+        config,
+        testPorts(config, {
+          publish: async () => {
+            publishes += 1
+            return 'unexpected-commit'
+          },
+        }),
+        { mode: 'initial', allowTestSources: true },
+      ),
+    ).rejects.toThrow('Initial deployment requires at least one validated article')
+    expect(publishes).toBe(0)
+  })
+
+  it('bootstraps or replaces a theme without reading sources or generating content', async () => {
+    const root = `/tmp/publume-theme-${Date.now()}-${Math.random()}`
+    const config = loadConfig(configEnv(), { rootDir: root })
+    const ports = testPorts(config)
+    ports.sources.collect = async () => {
+      throw new Error('Theme replacement must not read sources')
+    }
+    ports.site.publish = async (articles, mode) => {
+      expect(articles).toHaveLength(0)
+      expect(mode).toBe('bootstrap')
+      return 'theme-commit'
+    }
+
+    const result = await runPipeline(config, ports, { mode: 'bootstrap' })
+
+    expect(result).toMatchObject({ collected: 0, generated: 0, published: 0, targetCommitSha: 'theme-commit' })
+  })
+
   it('does not call AI again but still checks whether generated site configuration changed', async () => {
     const root = `/tmp/publume-pipeline-${Date.now()}-${Math.random()}`
     const config = loadConfig(configEnv({ OUTPUT_LANGUAGES: 'en,fr' }), { rootDir: root })

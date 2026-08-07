@@ -26,6 +26,7 @@
   },
   "scripts": {
     "run": "bun src/cli.ts",
+    "initial": "bun src/cli.ts --initial",
     "bootstrap": "bun src/cli.ts --bootstrap",
     "build": "bun run typecheck",
     "typecheck": "tsc --noEmit",

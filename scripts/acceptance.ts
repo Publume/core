@@ -180,7 +180,10 @@ try {
     { rootDir: root },
   )
 
-  const first = await runPipeline(config, createPorts(config, fetchFixture, aiClient), { allowTestSources: true })
+  const first = await runPipeline(config, createPorts(config, fetchFixture, aiClient), {
+    mode: 'initial',
+    allowTestSources: true,
+  })
   if (first.published !== 6 || first.sourceErrors !== 1 || calls.count !== 6)
     throw new Error(`first run did not publish 6 language files: ${JSON.stringify({ first, calls: calls.count })}`)
 
@@ -208,7 +211,7 @@ try {
     'package.json',
     'src/data/site-config.generated.json',
   ]) {
-    if (!files.includes(requiredFile)) throw new Error(`bootstrap missing ${requiredFile}`)
+    if (!files.includes(requiredFile)) throw new Error(`initial deployment missing ${requiredFile}`)
   }
   if (files.includes('.publume-theme.json')) throw new Error('source theme marker leaked into target repository')
   const marker = JSON.parse(await readFile(path.join(checkout, '.publume-site.json'), 'utf8')) as {

@@ -44,7 +44,7 @@ Core 仓库建议设为私有，因为它会保存运行状态和站点配置。
 5. 创建仓库后进入 **Settings → Pages**。
 6. 在 **Build and deployment → Source** 中选择 **GitHub Actions**。
 
-Core 的首次 `bootstrap` 会把完整站点和 Pages Workflow 写入这个空仓库。若仓库已有普通文件且没有
+Core 的首次 `initial` 运行会把完整站点、基线文章和 Pages Workflow 写入这个空仓库。若仓库已有普通文件且没有
 `.publume-site.json`，Core 会拒绝覆盖它。
 
 你的 Pages 地址通常是：
@@ -61,7 +61,7 @@ https://你的用户名.github.io/my-publume-site/
 2. 点击 **Generate new token**，设置合理的过期时间。
 3. **Repository access** 选择 **Only select repositories**，只选择刚创建的 Website 仓库。
 4. 在 **Repository permissions** 中把 **Contents** 设为 **Read and write**。
-5. 同一位置把 **Workflows** 也设为 **Read and write**。首次 `bootstrap` 需要写入
+5. 同一位置把 **Workflows** 也设为 **Read and write**。首次 `initial` 运行需要写入
    `.github/workflows/pages.yml`，缺少这个权限会导致 push 被 GitHub 拒绝。
 6. 创建并立即复制 Token。GitHub 之后不会再次显示它。
 
@@ -104,7 +104,7 @@ https://你的用户名.github.io/my-publume-site/
 
 ### 选择站点模板
 
-`THEME` 决定首次 `bootstrap` 安装哪个站点模板。不配置时默认使用 `editorial`。当前
+`THEME` 决定首次 `initial` 运行安装哪个站点模板。不配置时默认使用 `editorial`。当前
 [`Publume/themes`](https://github.com/Publume/themes) 提供：
 
 | `THEME` 值 | 适合的内容 |
@@ -177,7 +177,7 @@ https://你的用户名.github.io/my-publume-site/
 飞书、钉钉和企业微信必须使用能够接受普通文本请求的机器人配置；当前适配器不会另外计算平台签名。禁用全部通知
 时，可以删除 `DELIVERY_CONFIG`，或把它设为 `[]`。
 
-通知只会在普通 `run` 新发布文章后发送：`bootstrap` 不发通知，没有新文章时也不会发。运行结束后检查摘要：
+`initial` 或普通 `run` 发布新文章后会发送通知；`bootstrap` 和没有新文章的运行不会发送。运行结束后检查摘要：
 
 - `deliveriesSent`：本轮发送成功的数量；
 - `deliveriesFailed`：本轮发送失败的数量；
@@ -188,19 +188,19 @@ https://你的用户名.github.io/my-publume-site/
 
 其余变量都有默认值。阈值、Prompt、通知和多语言配置见[完整配置说明](configuration.md)。
 
-## 5. 第一次运行 `bootstrap`
+## 5. 第一次运行 `initial`
 
 1. 打开 Core 仓库的 **Actions**。
 2. 在左侧选择 **Generate and publish**。
 3. 点击 **Run workflow**。
-4. Branch 选择 `main`，**Run mode** 选择 `bootstrap`。
+4. Branch 选择 `main`，**Run mode** 选择 `initial`。
 5. 再次点击绿色的 **Run workflow**，等待运行结束。
 
 首次部署成功必须同时满足四个条件：
 
 1. Core 仓库中的 **Generate and publish** 运行显示绿色成功；
-2. 运行摘要含有非空的 `targetCommitSha`；`published: 0` 在 `bootstrap` 模式下是正常结果；
-3. Website 仓库出现 `chore: bootstrap site` 提交；
+2. 运行摘要含有非空的 `targetCommitSha`，且 `published` 至少为 `1`；
+3. Website 仓库出现包含生成文章文件的 `content: publish validated articles` 提交；
 4. Website 仓库中的 **Deploy site** Workflow 显示绿色成功，并且 **Settings → Pages** 给出的地址可以打开。
 
 Pages 首次发布可能需要等待一两分钟。只有 Core Workflow 成功不代表网站已经部署完成，必须继续检查 Website
@@ -211,8 +211,8 @@ Pages 首次发布可能需要等待一两分钟。只有 Core Workflow 成功�
 站点首次部署成功后，再回到 Core 仓库运行 **Generate and publish**，这次把 **Run mode** 设为 `run`。
 普通运行会读取真实信息源、调用 AI，并只发布通过过滤和阈值的内容。
 
-`published: 0` 仍然可以是一次成功运行：这表示本轮没有新内容达到发布标准。不要为了普通内容运行重复选择
-`bootstrap`；`bootstrap` 只用于首次建站或明确更换主题。
+`published: 0` 仍然可以是一次成功的普通运行：这表示本轮没有新内容达到发布标准。首次 `initial` 如果没有
+任何文章通过验证会明确失败，不能把空站点标记为就绪。明确更换主题时应选择 `bootstrap`，不要重复选择 `initial`。
 
 ## 常见失败
 

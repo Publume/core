@@ -10,7 +10,7 @@ on:
         required: false
         default: run
         type: choice
-        options: [run, bootstrap]
+        options: [run, initial, bootstrap]
 
 concurrency:
   group: publume-generate
@@ -90,7 +90,7 @@ jobs:
           DELIVERY_CONFIG: ${{ secrets.DELIVERY_CONFIG }}
           PUBLUME_MODE: ${{ inputs.mode || 'run' }}
         run: |
-          summary="$(bun src/cli.ts $([ "$PUBLUME_MODE" = bootstrap ] && echo --bootstrap))"
+          summary="$(bun src/cli.ts --mode="$PUBLUME_MODE")"
           echo "$summary"
           {
             echo '## Publume Core run'
