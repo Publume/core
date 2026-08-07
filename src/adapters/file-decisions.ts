@@ -9,10 +9,10 @@ const record = z
   .object({
     decisionKey: z.string().min(1),
     status: z.enum(['rejected', 'generated', 'published', 'failed']),
-    reason: z.string().optional(),
-    score: z.number().min(0).max(1).optional(),
     configHash: z.string().min(1),
     updatedAt: timestamp,
+    reason: z.string().optional(),
+    score: z.number().min(0).max(1).optional(),
     targetCommitSha: z.string().min(1).optional(),
     candidateTitle: z.string().min(1).optional(),
     canonicalUrl: z.url().optional(),

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'bun:test'
-import { writeFile } from 'node:fs/promises'
+import { readFile, writeFile } from 'node:fs/promises'
 import { createFileDecisionStore } from '../src/adapters/file-decisions'
 import { canonicalUrl } from '../src/adapters/sources/candidate'
 import { createSourceReader, type FetchLike } from '../src/adapters/sources/reader'
@@ -244,6 +244,35 @@ describe('configuration and source boundaries', () => {
     }
     await store.save(state)
     expect((await store.load()).decisions.example?.status).toBe('rejected')
+  })
+
+  it('does not reorder existing decision fields during a load-save cycle', async () => {
+    const file = `/tmp/publume-ordered-state-${Date.now()}-${Math.random()}.json`
+    const serialized = `${JSON.stringify(
+      {
+        version: 1,
+        decisions: {
+          example: {
+            decisionKey: 'example',
+            status: 'rejected',
+            configHash: 'config',
+            updatedAt: '2026-08-05T12:00:00.000Z',
+            reason: 'not relevant',
+            score: 0.2,
+          },
+        },
+        sourceCheckpoints: {},
+        pendingDeliveries: [],
+      },
+      null,
+      2,
+    )}\n`
+    await writeFile(file, serialized)
+
+    const store = createFileDecisionStore(file)
+    await store.save(await store.load())
+
+    expect(await readFile(file, 'utf8')).toBe(serialized)
   })
 
   it('loads state written before source checkpoints were introduced', async () => {
