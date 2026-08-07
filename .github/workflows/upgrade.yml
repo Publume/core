@@ -27,11 +27,11 @@ jobs:
     timeout-minutes: 10
     steps:
       - name: Check out managed Core
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           persist-credentials: false
       - name: Check out requested Core release
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           repository: ${{ inputs.core_repository }}
           ref: ${{ inputs.core_ref }}
