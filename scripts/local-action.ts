@@ -119,7 +119,6 @@ async function main(): Promise<void> {
     ['SITE_SHOW_SCORE', process.env.SITE_SHOW_SCORE || 'false'],
     ['SITE_SHOW_SOURCES', process.env.SITE_SHOW_SOURCES || 'true'],
     ['SITE_FOOTER_TEXT', process.env.SITE_FOOTER_TEXT || ''],
-    ['PUBLUME_LOCAL', 'true'],
   ]
   const actArguments = [
     'workflow_dispatch',

@@ -25,14 +25,12 @@ jobs:
     timeout-minutes: 20
     env:
       AI_PROVIDER: ${{ vars.AI_PROVIDER }}
-      AI_API_KEY: ${{ secrets.AI_API_KEY }}
       AI_BASE_URL: ${{ vars.AI_BASE_URL }}
       AI_MODEL: ${{ vars.AI_MODEL }}
       AI_ALLOWED_MODELS: ${{ vars.AI_ALLOWED_MODELS }}
       AI_RESPONSE_FORMAT: ${{ vars.AI_RESPONSE_FORMAT }}
       AI_TIMEOUT_SECONDS: ${{ vars.AI_TIMEOUT_SECONDS }}
       TARGET_REPOSITORY: ${{ vars.TARGET_REPOSITORY }}
-      TARGET_REPO_TOKEN: ${{ secrets.TARGET_REPO_TOKEN }}
       TARGET_BRANCH: ${{ vars.TARGET_BRANCH }}
       SOURCE_URLS: ${{ vars.SOURCE_URLS }}
       SOURCE_TIMEOUT_SECONDS: ${{ vars.SOURCE_TIMEOUT_SECONDS }}
@@ -49,7 +47,6 @@ jobs:
       MAX_PENDING_DELIVERIES: ${{ vars.MAX_PENDING_DELIVERIES }}
       MINIMUM_CONTENT_LENGTH: ${{ vars.MINIMUM_CONTENT_LENGTH }}
       STATE_PATH: ${{ vars.STATE_PATH }}
-      DELIVERY_CONFIG: ${{ secrets.DELIVERY_CONFIG }}
       THEME_REPOSITORY: ${{ vars.THEME_REPOSITORY }}
       THEME_REF: ${{ vars.THEME_REF }}
       THEME: ${{ vars.THEME }}
@@ -74,20 +71,23 @@ jobs:
       SITE_MUTED_COLOR: ${{ vars.SITE_MUTED_COLOR }}
       SITE_MAX_WIDTH: ${{ vars.SITE_MAX_WIDTH }}
       SITE_CARD_RADIUS: ${{ vars.SITE_CARD_RADIUS }}
-      SITE_ARTICLE_TITLE_MAX_SIZE: ${{ vars.SITE_ARTICLE_TITLE_MAX_SIZE }}
       SITE_SHOW_TOPICS: ${{ vars.SITE_SHOW_TOPICS }}
       SITE_SHOW_SCORE: ${{ vars.SITE_SHOW_SCORE }}
       SITE_SHOW_SOURCES: ${{ vars.SITE_SHOW_SOURCES }}
       SITE_FOOTER_TEXT: ${{ vars.SITE_FOOTER_TEXT }}
-      PUBLUME_LOCAL: ${{ vars.PUBLUME_LOCAL }}
     steps:
       - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: 1.3.14
-      - run: bun install --frozen-lockfile
+      - run: bun ci --ignore-scripts
       - name: Run Publume Core
         env:
+          AI_API_KEY: ${{ secrets.AI_API_KEY }}
+          TARGET_REPO_TOKEN: ${{ secrets.TARGET_REPO_TOKEN }}
+          DELIVERY_CONFIG: ${{ secrets.DELIVERY_CONFIG }}
           PUBLUME_MODE: ${{ inputs.mode || 'run' }}
         run: |
           summary="$(bun src/cli.ts $([ "$PUBLUME_MODE" = bootstrap ] && echo --bootstrap))"
@@ -99,8 +99,10 @@ jobs:
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
       - name: Persist decision state
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
         run: |
-          state_path="${STATE_PATH:-state/decisions.json}"
+          state_path="$(bun scripts/resolve-state-path.ts)"
           git config user.name 'publume[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add -- "$state_path"
@@ -108,9 +110,9 @@ jobs:
             echo 'No decision state changes.'
           else
             git commit -m 'chore: persist publishing decisions'
-            if [ "$PUBLUME_LOCAL" = true ]; then
+            if [ "${ACT:-}" = true ]; then
               echo 'Local simulation: state commit kept locally; remote push skipped.'
             else
-              git push
+              bash scripts/push-current-branch.sh
             fi
           fi

@@ -28,30 +28,49 @@ jobs:
     steps:
       - name: Check out managed Core
         uses: actions/checkout@v6
+        with:
+          persist-credentials: false
       - name: Check out requested Core release
         uses: actions/checkout@v6
         with:
           repository: ${{ inputs.core_repository }}
           ref: ${{ inputs.core_ref }}
           path: .publume-upstream
+          persist-credentials: false
+      - uses: oven-sh/setup-bun@v2
       - name: Synchronize managed files
+        id: synchronize
+        env:
+          STATE_PATH: ${{ vars.STATE_PATH }}
         run: |
+          state_path="$(bun scripts/resolve-state-path.ts)"
+          core_sha="$(git -C .publume-upstream rev-parse HEAD)"
+          cp scripts/push-current-branch.sh "$RUNNER_TEMP/publume-push-current-branch.sh"
           rsync -a --delete \
             --exclude '.git/' \
             --exclude '.publume-upstream/' \
             --exclude 'state/' \
+            --exclude "/$state_path" \
             .publume-upstream/ ./
           rm -rf -- .publume-upstream
+          echo "core_sha=$core_sha" >> "$GITHUB_OUTPUT"
+      - name: Verify the requested Core release
+        run: |
+          bun ci --ignore-scripts
+          bun run check
       - name: Commit the upgrade
         env:
           CORE_REF: ${{ inputs.core_ref }}
+          CORE_SHA: ${{ steps.synchronize.outputs.core_sha }}
+          GITHUB_TOKEN: ${{ github.token }}
         run: |
           git config user.name 'publume[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add --all
+          git diff --cached --check
           if git diff --cached --quiet; then
             echo 'Core is already current.'
           else
-            git commit -m "chore: upgrade Publume Core to ${CORE_REF}"
-            git push
+            git commit -m "chore: upgrade Publume Core to ${CORE_REF}" -m "Upstream-Commit: ${CORE_SHA}"
+            bash "$RUNNER_TEMP/publume-push-current-branch.sh"
           fi
