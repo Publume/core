@@ -230,7 +230,7 @@ theme replacement.
 
 | Symptom | Cause and fix |
 | --- | --- |
-| `Target clone failed` or HTTP 403 | Confirm that `TARGET_REPO_TOKEN` selects the Website repository and has Contents and Workflows Read and write. For organization tokens, confirm approval. |
+| `Target fetch failed` or HTTP 403 | Confirm that `TARGET_REPO_TOKEN` selects the Website repository and has Contents and Workflows Read and write. For organization tokens, confirm approval. |
 | `Target repository is non-empty and has no compatible .publume-site.json` | The Website repository was initialized. Recreate it without a README, `.gitignore`, or license. |
 | A Website Pages step reports a missing site or 404 | In the Website repository, set **Settings → Pages → Source** to **GitHub Actions**, then rerun **Deploy site**. |
 | The final Core `git push` returns 403 | A repository or organization policy blocks Actions from writing contents. Check **Settings → Actions → General** and the `main` branch protection rules. |

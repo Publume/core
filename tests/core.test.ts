@@ -55,6 +55,7 @@ describe('configuration and source boundaries', () => {
     const config = loadConfig(configEnv(), { rootDir: '/tmp/publume-test' })
     expect(config.ai.model).toBe('test-model')
     expect(config.ai.allowedModels).toEqual(['test-model'])
+    expect(config.ai.concurrency).toBe(4)
     expect(config.editorial.languages).toEqual(['en'])
     expect(config.editorial.deduplicationContextSize).toBe(50)
     expect(config.sources.entries).toHaveLength(1)
@@ -186,6 +187,8 @@ describe('configuration and source boundaries', () => {
     expect(() => loadConfig(configEnv({ DEDUPLICATION_CONTEXT_SIZE: '201' }))).toThrow(
       'DEDUPLICATION_CONTEXT_SIZE must be between 0 and 200',
     )
+    expect(() => loadConfig(configEnv({ AI_CONCURRENCY: '1.5' }))).toThrow('AI_CONCURRENCY must be an integer')
+    expect(() => loadConfig(configEnv({ AI_CONCURRENCY: '21' }))).toThrow('AI_CONCURRENCY must be between 1 and 20')
     expect(() => loadConfig(configEnv({ OUTPUT_LANGUAGES: 'en,fr', DEFAULT_CONTENT_LANGUAGE: 'de' }))).toThrow(
       'DEFAULT_CONTENT_LANGUAGE must be included in OUTPUT_LANGUAGES',
     )
@@ -216,6 +219,46 @@ describe('configuration and source boundaries', () => {
       'json-1',
       'https://example.test/page',
     ])
+  })
+
+  it('collects sources with bounded concurrency while preserving configured order and isolated failures', async () => {
+    const sources = Array.from({ length: 6 }, (_, index) => ({
+      id: `source-${index}`,
+      url: `https://source-${index}.example.test/feed.xml`,
+    }))
+    const started: string[] = []
+    let active = 0
+    let maximumActive = 0
+    const { promise: requestsReleased, resolve: releaseRequests } = Promise.withResolvers<void>()
+    const reader = createSourceReader(sources, 20_000, async (input) => {
+      const sourceIndex = Number(new URL(String(input)).hostname.match(/\d+/)?.[0] ?? -1)
+      started.push(`source-${sourceIndex}`)
+      active += 1
+      maximumActive = Math.max(maximumActive, active)
+      await requestsReleased
+      active -= 1
+      if (sourceIndex === 2) throw new Error('source unavailable')
+      return response(
+        `<?xml version="1.0"?><rss version="2.0"><channel><item><guid>item-${sourceIndex}</guid><title>Source ${sourceIndex}</title><link>https://articles.example.test/${sourceIndex}</link><description>Source ${sourceIndex} content.</description></item></channel></rss>`,
+        'application/rss+xml',
+      )
+    })
+
+    const collectionPromise = reader.collect()
+    expect(started).toEqual(['source-0', 'source-1', 'source-2', 'source-3'])
+    expect(maximumActive).toBe(4)
+    releaseRequests()
+
+    const collection = await collectionPromise
+    expect(maximumActive).toBe(4)
+    expect(collection.candidates.map((candidate) => candidate.externalId)).toEqual([
+      'item-0',
+      'item-1',
+      'item-3',
+      'item-4',
+      'item-5',
+    ])
+    expect(collection.errors).toEqual([{ sourceId: 'source-2', error: 'source unavailable' }])
   })
 
   it('fetches full article evidence only after candidate selection while preserving source identity', async () => {

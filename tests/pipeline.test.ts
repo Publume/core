@@ -7,6 +7,7 @@ import { runPipeline } from '../src/app/pipeline'
 import type { PipelinePorts, SitePublisher } from '../src/app/ports'
 import { loadConfig } from '../src/config/load'
 import type { AppConfig } from '../src/config/model'
+import { emptyDecisionState } from '../src/domain/decisions'
 import { topicIdForLabel } from '../src/domain/topics'
 
 const feedFixture: FetchLike = async (input) => {
@@ -116,6 +117,7 @@ function testPorts(config: AppConfig, options: PortOptions = {}): PipelinePorts 
         return new Set()
       },
       publish: options.publish ?? (async () => 'commit-1'),
+      async close() {},
     },
   }
 }
@@ -171,6 +173,7 @@ describe('pipeline idempotence', () => {
     const root = `/tmp/publume-theme-${Date.now()}-${Math.random()}`
     const config = loadConfig(configEnv(), { rootDir: root })
     const ports = testPorts(config)
+    let closes = 0
     ports.sources.collect = async () => {
       throw new Error('Theme replacement must not read sources')
     }
@@ -179,10 +182,183 @@ describe('pipeline idempotence', () => {
       expect(mode).toBe('bootstrap')
       return 'theme-commit'
     }
+    ports.site.close = async () => {
+      closes += 1
+    }
 
     const result = await runPipeline(config, ports, { mode: 'bootstrap' })
 
     expect(result).toMatchObject({ collected: 0, generated: 0, published: 0, targetCommitSha: 'theme-commit' })
+    expect(closes).toBe(1)
+  })
+
+  it('releases the prepared site when the pipeline fails before publication', async () => {
+    const root = `/tmp/publume-site-cleanup-${Date.now()}-${Math.random()}`
+    const config = loadConfig(configEnv(), { rootDir: root })
+    const ports = testPorts(config)
+    let closes = 0
+    ports.sources.collect = async () => {
+      throw new Error('collection unavailable')
+    }
+    ports.site.close = async () => {
+      closes += 1
+    }
+
+    await expect(runPipeline(config, ports)).rejects.toThrow('collection unavailable')
+    expect(closes).toBe(1)
+  })
+
+  it('prepares the target and collects sources concurrently', async () => {
+    const root = `/tmp/publume-startup-concurrency-${Date.now()}-${Math.random()}`
+    const config = loadConfig(configEnv(), { rootDir: root })
+    const ports = testPorts(config)
+    const targetStarted = Promise.withResolvers<void>()
+    const targetPreparation = Promise.withResolvers<ReadonlySet<string>>()
+    let collectionStarted = false
+    ports.site.publishedDecisionKeys = () => {
+      targetStarted.resolve()
+      return targetPreparation.promise
+    }
+    ports.sources.collect = async () => {
+      collectionStarted = true
+      return { candidates: [], errors: [] }
+    }
+
+    const pipeline = runPipeline(config, ports)
+    await targetStarted.promise
+    expect(collectionStarted).toBe(true)
+    targetPreparation.resolve(new Set())
+
+    await pipeline
+  })
+
+  it('runs independent stories with bounded AI concurrency against one historical deduplication snapshot', async () => {
+    const root = `/tmp/publume-ai-concurrency-${Date.now()}-${Math.random()}`
+    const config = loadConfig(
+      configEnv({
+        AI_CONCURRENCY: '2',
+        SOURCE_URLS: 'https://example.test/first.xml\nhttps://example.test/second.xml\nhttps://example.test/third.xml',
+      }),
+      { rootDir: root },
+    )
+    const candidates = config.sources.entries.map((source, index) => ({
+      sourceId: source.id,
+      externalId: `candidate-${index}`,
+      canonicalUrl: `https://example.test/candidate-${index}`,
+      title: `Candidate ${index}`,
+      content: `Candidate ${index} has complete article evidence for publication.`,
+      contentOrigin: 'article-page' as const,
+      publishedAt: '2026-08-05T11:00:00.000Z',
+    }))
+    const state = emptyDecisionState()
+    state.decisions.historical = {
+      decisionKey: 'historical',
+      status: 'published',
+      configHash: 'previous-config',
+      updatedAt: '2026-08-04T12:00:00.000Z',
+      candidateTitle: 'Historical publication',
+      canonicalUrl: 'https://example.test/historical',
+    }
+    const historicalContext = [
+      {
+        decisionKey: 'historical',
+        title: 'Historical publication',
+        canonicalUrl: 'https://example.test/historical',
+        publishedAt: '2026-08-04T12:00:00.000Z',
+      },
+    ]
+    const gateStarted = candidates.map(() => Promise.withResolvers<void>())
+    const gateReleased = candidates.map(() => Promise.withResolvers<void>())
+    const generationStarted = candidates.map(() => Promise.withResolvers<void>())
+    const generationReleased = candidates.map(() => Promise.withResolvers<void>())
+    const gateHasStarted = candidates.map(() => false)
+    const gateContexts: unknown[] = new Array(candidates.length)
+    let publishedTitles: string[] = []
+    const basePorts = testPorts(config)
+    const ports: PipelinePorts = {
+      ...basePorts,
+      sources: {
+        async collect() {
+          return { candidates, errors: [] }
+        },
+        async collectEvidence() {
+          return { candidates, errors: [], fetched: candidates.length }
+        },
+      },
+      decisions: {
+        async load() {
+          return state
+        },
+        async save() {},
+      },
+      editorial: {
+        async consolidate(items) {
+          return items
+        },
+        async evaluate(candidate, recentPublications) {
+          const index = Number(candidate.externalId.slice('candidate-'.length))
+          gateHasStarted[index] = true
+          gateContexts[index] = recentPublications
+          gateStarted[index]?.resolve()
+          await gateReleased[index]?.promise
+          return {
+            publish: true,
+            score: 0.9,
+            reason: 'important',
+            topics: [],
+            risks: [],
+            verifiedFacts: [`Verified candidate ${index}`],
+            uncertainties: [],
+            sourceUrls: [candidate.canonicalUrl],
+          }
+        },
+        async generate(candidate) {
+          const index = Number(candidate.externalId.slice('candidate-'.length))
+          generationStarted[index]?.resolve()
+          await generationReleased[index]?.promise
+          return [
+            {
+              language: 'en',
+              title: candidate.title,
+              summary: 'Summary',
+              body: 'Body',
+              sourceUrls: [candidate.canonicalUrl],
+            },
+          ]
+        },
+      },
+      site: {
+        ...basePorts.site,
+        async publish(articles) {
+          publishedTitles = articles.map((article) => article.title)
+          return 'concurrent-commit'
+        },
+      },
+    }
+
+    const pipeline = runPipeline(config, ports, {
+      allowTestSources: true,
+      now: new Date('2026-08-05T12:00:00.000Z'),
+    })
+    await gateStarted[0]?.promise
+    expect(gateHasStarted).toEqual([true, true, false])
+
+    gateReleased[0]?.resolve()
+    await generationStarted[0]?.promise
+    expect(gateHasStarted[2]).toBe(false)
+    generationReleased[0]?.resolve()
+    await gateStarted[2]?.promise
+
+    gateReleased[1]?.resolve()
+    gateReleased[2]?.resolve()
+    await Promise.all([generationStarted[1]?.promise, generationStarted[2]?.promise])
+    generationReleased[2]?.resolve()
+    generationReleased[1]?.resolve()
+
+    const result = await pipeline
+    expect(gateContexts).toEqual([historicalContext, historicalContext, historicalContext])
+    expect(publishedTitles).toEqual(['Candidate 0', 'Candidate 1', 'Candidate 2'])
+    expect(result).toMatchObject({ gateEvaluated: 3, generated: 3, published: 3 })
   })
 
   it('does not call AI again but still checks whether generated site configuration changed', async () => {

@@ -67,6 +67,7 @@ async function main(): Promise<void> {
     ['AI_ALLOWED_MODELS', process.env.AI_ALLOWED_MODELS || process.env.AI_MODEL || ''],
     ['AI_RESPONSE_FORMAT', process.env.AI_RESPONSE_FORMAT || 'json_object'],
     ['AI_TIMEOUT_SECONDS', process.env.AI_TIMEOUT_SECONDS || '60'],
+    ['AI_CONCURRENCY', process.env.AI_CONCURRENCY || '4'],
     ['TARGET_REPOSITORY', repository],
     ['SOURCE_URLS', process.env.SOURCE_URLS || ''],
     ['CONTENT_INSTRUCTIONS', process.env.CONTENT_INSTRUCTIONS || ''],

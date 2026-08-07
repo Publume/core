@@ -214,6 +214,8 @@ export function loadConfig(env: Environment = process.env, options: { rootDir?: 
   const responseFormat = read.optional('AI_RESPONSE_FORMAT', 'json_object')
   if (responseFormat !== 'json_object' && responseFormat !== 'json_schema')
     throw new Error(`Unsupported AI_RESPONSE_FORMAT: ${responseFormat}`)
+  const aiConcurrency = read.number('AI_CONCURRENCY', 4, { min: 1, max: 20 })
+  if (!Number.isInteger(aiConcurrency)) throw new Error('AI_CONCURRENCY must be an integer')
 
   const targetRepository = read.required('TARGET_REPOSITORY')
   const targetToken = read.optional('TARGET_REPO_TOKEN')
@@ -229,6 +231,7 @@ export function loadConfig(env: Environment = process.env, options: { rootDir?: 
       allowedModels: modelAllowlist,
       responseFormat,
       timeoutMs: read.number('AI_TIMEOUT_SECONDS', 60, { min: 1, max: 600 }) * 1_000,
+      concurrency: aiConcurrency,
     },
     editorial: {
       instructions: read.required('CONTENT_INSTRUCTIONS'),

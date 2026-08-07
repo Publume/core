@@ -155,8 +155,13 @@ items; this prevents a retired endpoint from filling the bounded queue forever.
 
 Exact candidate identity is checked before AI calls. The publication gate also
 receives up to `DEDUPLICATION_CONTEXT_SIZE` recently approved titles and URLs,
-allowing it to reject semantically duplicated coverage across different sources.
-The context is bounded by both that setting and the decision-state retention cap.
+allowing it to reject semantically duplicated coverage across different runs.
+Core snapshots that historical context before evaluating the current run. Reports
+from the same current event are first merged by the consolidator, then the
+remaining story gates and article generations run with the bounded
+`AI_CONCURRENCY` setting. Results are applied in story order, so network timing
+cannot reorder decisions or generated files. The historical context is bounded
+by both the deduplication setting and the decision-state retention cap.
 
 ## Evidence and report consolidation
 

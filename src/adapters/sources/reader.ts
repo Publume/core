@@ -9,6 +9,7 @@ import { discoverFeedUrl, parseFeed, parseHtml, parseJson } from './parsers'
 export type FetchLike = (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>
 
 type Document = { readonly text: string; readonly contentType: string }
+const sourceConcurrency = 4
 const evidenceConcurrency = 4
 const maximumEvidenceCharacters = 30_000
 const maximumArticleResponseBytes = 2_000_000
@@ -253,16 +254,30 @@ export function createSourceReader(
 ): SourceReader {
   return {
     async collect(): Promise<CollectionResult> {
-      const candidates: Candidate[] = []
-      const errors: { sourceId: string; error: string }[] = []
-      for (const source of sources) {
-        try {
-          candidates.push(...(await collectSource(source, fetchFn, timeoutMs)))
-        } catch (error) {
-          errors.push({ sourceId: source.id, error: error instanceof Error ? error.message : String(error) })
+      const candidatesBySource = sources.map((): Candidate[] => [])
+      const errorsBySource: ({ sourceId: string; error: string } | undefined)[] = new Array(sources.length)
+      let nextIndex = 0
+      async function worker(): Promise<void> {
+        while (nextIndex < sources.length) {
+          const index = nextIndex
+          nextIndex += 1
+          const source = sources[index]
+          if (!source) continue
+          try {
+            candidatesBySource[index] = await collectSource(source, fetchFn, timeoutMs)
+          } catch (error) {
+            errorsBySource[index] = {
+              sourceId: source.id,
+              error: error instanceof Error ? error.message : String(error),
+            }
+          }
         }
       }
-      return { candidates, errors }
+      await Promise.all(Array.from({ length: Math.min(sourceConcurrency, sources.length) }, () => worker()))
+      return {
+        candidates: candidatesBySource.flat(),
+        errors: errorsBySource.filter((error) => error !== undefined),
+      }
     },
     collectEvidence(candidates): Promise<EvidenceCollectionResult> {
       return collectEvidence(candidates, fetchFn, timeoutMs, resolveHostname)

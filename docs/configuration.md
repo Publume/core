@@ -29,6 +29,7 @@ the site workflow.
 | `AI_ALLOWED_MODELS` | no | `AI_MODEL` | Comma- or newline-separated model allowlist. |
 | `AI_RESPONSE_FORMAT` | no | `json_object` | `json_object` or `json_schema`. |
 | `AI_TIMEOUT_SECONDS` | no | `60` | Per-request timeout from 1 to 600 seconds. |
+| `AI_CONCURRENCY` | no | `4` | Maximum concurrent gate or article-generation requests, from 1 to 20. |
 
 ## Content mission
 

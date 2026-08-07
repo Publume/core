@@ -28,6 +28,7 @@ export interface DecisionStore {
 export interface SitePublisher {
   publishedDecisionKeys(): Promise<ReadonlySet<string>>
   publish(articles: readonly Article[], mode: 'content' | 'bootstrap'): Promise<string | undefined>
+  close(): Promise<void>
 }
 
 export interface DeliveryChannel {

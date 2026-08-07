@@ -145,6 +145,8 @@ describe('GitHub workflow state boundary', () => {
     expect(generate).not.toContain('PUBLUME_LOCAL')
     expect(generate).not.toContain('SITE_ARTICLE_TITLE_MAX_SIZE')
     expect(generate).toContain('options: [run, initial, bootstrap]')
+    expect(generate).toContain('AI_CONCURRENCY:')
+    expect(generate).toContain('vars.AI_CONCURRENCY')
     expect(generate).toContain('bun src/cli.ts --mode="$PUBLUME_MODE"')
     expect(upgrade).toContain('--exclude "/$state_path"')
     expect(upgrade.indexOf('bun run check')).toBeLessThan(upgrade.indexOf('- name: Commit the upgrade'))

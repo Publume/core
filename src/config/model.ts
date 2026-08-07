@@ -11,6 +11,7 @@ export type AiConfig = {
   readonly allowedModels: readonly string[]
   readonly responseFormat: 'json_object' | 'json_schema'
   readonly timeoutMs: number
+  readonly concurrency: number
 }
 
 export type EditorialConfig = {

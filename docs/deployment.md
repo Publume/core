@@ -219,7 +219,7 @@ Pages 首次发布可能需要等待一两分钟。只有 Core Workflow 成功�
 
 | 现象 | 原因和处理 |
 | --- | --- |
-| `Target clone failed`、HTTP 403 | 检查 `TARGET_REPO_TOKEN` 是否选中了 Website 仓库，并具有 Contents 和 Workflows Read and write。组织 Token 还要确认已经获批。 |
+| `Target fetch failed`、HTTP 403 | 检查 `TARGET_REPO_TOKEN` 是否选中了 Website 仓库，并具有 Contents 和 Workflows Read and write。组织 Token 还要确认已经获批。 |
 | `Target repository is non-empty and has no compatible .publume-site.json` | Website 仓库不是空仓库。重新创建一个不带 README、`.gitignore` 和 License 的空仓库。 |
 | Website 的 Pages 步骤提示站点不存在或 404 | 在 Website 仓库 **Settings → Pages** 把 Source 设为 **GitHub Actions**，然后重新运行 **Deploy site**。 |
 | Core 最后 `git push` 返回 403 | Core 仓库或组织策略阻止 Actions 写入内容。检查 **Settings → Actions → General** 和 `main` 分支保护规则。 |

@@ -1,5 +1,13 @@
 import type { AppConfig } from '../config/model'
-import { type Article, type Candidate, candidateReports, type PublicationReference } from '../domain/content'
+import {
+  type Article,
+  type Candidate,
+  candidateReports,
+  type GateDecision,
+  type GeneratedArticle,
+  type PublicationReference,
+  type SourceReport,
+} from '../domain/content'
 import {
   type DecisionRecord,
   type DecisionState,
@@ -63,7 +71,25 @@ type RunContext = {
   readonly configHash: string
   readonly updatedAt: string
   readonly allowTestSources: boolean
+  readonly publicationContext: readonly PublicationReference[]
 }
+
+type PreparedCandidate = {
+  readonly candidate: Candidate
+  readonly decisionKey: string
+  readonly reports: readonly SourceReport[]
+}
+
+type CandidateOutcome =
+  | { readonly kind: 'rejected'; readonly prepared: PreparedCandidate; readonly gate: GateDecision }
+  | {
+      readonly kind: 'generated'
+      readonly prepared: PreparedCandidate
+      readonly gate: GateDecision
+      readonly generated: readonly GeneratedArticle[]
+      readonly topics: ReturnType<typeof normalizeTopics>
+    }
+  | { readonly kind: 'failed'; readonly prepared: PreparedCandidate; readonly reason: string }
 
 const emptyCounters = (): Counters => ({
   alreadyDecided: 0,
@@ -152,8 +178,8 @@ function bootstrapSummary(targetCommitSha?: string): RunSummary {
   }
 }
 
-async function processCandidate(candidate: Candidate, context: RunContext): Promise<readonly Article[]> {
-  const { config, ports, state, publishedKeys, seenKeys, counters, failedSources, configHash, updatedAt } = context
+function prepareCandidate(candidate: Candidate, context: RunContext): PreparedCandidate | undefined {
+  const { config, state, publishedKeys, seenKeys, counters, configHash, updatedAt } = context
   const decisionKey = makeDecisionKey(
     candidate.sourceId,
     candidate.externalId,
@@ -163,7 +189,7 @@ async function processCandidate(candidate: Candidate, context: RunContext): Prom
   const previous = state.decisions[decisionKey]
   if ((previous && previous.status !== 'failed') || publishedKeys.has(decisionKey) || seenKeys.has(decisionKey)) {
     counters.alreadyDecided += 1
-    return []
+    return undefined
   }
   seenKeys.add(decisionKey)
 
@@ -179,49 +205,84 @@ async function processCandidate(candidate: Candidate, context: RunContext): Prom
     state.decisions[decisionKey] = decisionRecord(decisionKey, 'rejected', configHash, updatedAt, {
       reason: filterReason,
     })
-    return []
+    return undefined
   }
 
   counters.gateEvaluated += 1
-  try {
-    const gate = await ports.editorial.evaluate(
-      candidate,
-      recentPublications(state, config.editorial.deduplicationContextSize),
-    )
-    if (!gate.publish) {
-      counters.rejected += 1
-      state.decisions[decisionKey] = decisionRecord(decisionKey, 'rejected', configHash, updatedAt, {
-        reason: gate.reason,
-        score: gate.score,
-      })
-      return []
-    }
+  return { candidate, decisionKey, reports }
+}
 
-    const generated = await ports.editorial.generate(candidate, gate)
-    counters.generated += generated.length
-    state.decisions[decisionKey] = decisionRecord(decisionKey, 'generated', configHash, updatedAt, {
-      reason: gate.reason,
-      score: gate.score,
-      candidateTitle: candidate.title,
-      canonicalUrl: candidate.canonicalUrl,
-    })
+async function evaluateCandidate(prepared: PreparedCandidate, context: RunContext): Promise<CandidateOutcome> {
+  const { candidate } = prepared
+  try {
+    const gate = await context.ports.editorial.evaluate(candidate, context.publicationContext)
+    if (!gate.publish) return { kind: 'rejected', prepared, gate }
+    const generated = await context.ports.editorial.generate(candidate, gate)
     const topics = normalizeTopics(gate.topics)
-    return generated.map((article) => ({
-      ...article,
-      decisionKey,
-      publishedAt: updatedAt,
-      score: gate.score,
-      topics: topics.labels,
-      topicIds: topics.ids,
-    }))
+    return { kind: 'generated', prepared, gate, generated, topics }
   } catch (error) {
-    counters.failed += 1
-    for (const report of reports) failedSources.add(report.sourceId)
-    state.decisions[decisionKey] = decisionRecord(decisionKey, 'failed', configHash, updatedAt, {
+    return {
+      kind: 'failed',
+      prepared,
       reason: error instanceof Error ? error.message : String(error),
+    }
+  }
+}
+
+function applyCandidateOutcome(outcome: CandidateOutcome, context: RunContext): readonly Article[] {
+  const { candidate, decisionKey, reports } = outcome.prepared
+  const { counters, failedSources, state, configHash, updatedAt } = context
+  if (outcome.kind === 'rejected') {
+    counters.rejected += 1
+    state.decisions[decisionKey] = decisionRecord(decisionKey, 'rejected', configHash, updatedAt, {
+      reason: outcome.gate.reason,
+      score: outcome.gate.score,
     })
     return []
   }
+  if (outcome.kind === 'failed') {
+    counters.failed += 1
+    for (const report of reports) failedSources.add(report.sourceId)
+    state.decisions[decisionKey] = decisionRecord(decisionKey, 'failed', configHash, updatedAt, {
+      reason: outcome.reason,
+    })
+    return []
+  }
+
+  counters.generated += outcome.generated.length
+  state.decisions[decisionKey] = decisionRecord(decisionKey, 'generated', configHash, updatedAt, {
+    reason: outcome.gate.reason,
+    score: outcome.gate.score,
+    candidateTitle: candidate.title,
+    canonicalUrl: candidate.canonicalUrl,
+  })
+  return outcome.generated.map((article) => ({
+    ...article,
+    decisionKey,
+    publishedAt: updatedAt,
+    score: outcome.gate.score,
+    topics: outcome.topics.labels,
+    topicIds: outcome.topics.ids,
+  }))
+}
+
+async function mapWithConcurrency<Input, Output>(
+  values: readonly Input[],
+  concurrency: number,
+  task: (value: Input) => Promise<Output>,
+): Promise<readonly Output[]> {
+  const results = new Array<Output>(values.length)
+  let nextIndex = 0
+  async function worker(): Promise<void> {
+    while (nextIndex < values.length) {
+      const index = nextIndex
+      nextIndex += 1
+      const value = values[index]
+      if (value !== undefined) results[index] = await task(value)
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(concurrency, values.length) }, () => worker()))
+  return results
 }
 
 async function publish(articles: readonly Article[], context: RunContext): Promise<string | undefined> {
@@ -303,19 +364,21 @@ async function deliverPending(context: RunContext): Promise<{ sent: number; fail
   return { sent, failed, discarded }
 }
 
-export async function runPipeline(
-  config: AppConfig,
-  ports: PipelinePorts,
-  options: RunOptions = {},
-): Promise<RunSummary> {
+async function executePipeline(config: AppConfig, ports: PipelinePorts, options: RunOptions = {}): Promise<RunSummary> {
   if (options.mode === 'bootstrap') return bootstrapSummary(await ports.site.publish([], 'bootstrap'))
 
   const now = options.now ?? new Date()
   const updatedAt = now.toISOString()
   const configHash = configurationHash(config)
   const state = await ports.decisions.load()
-  const publishedKeys = await ports.site.publishedDecisionKeys()
-  const collection = await ports.sources.collect()
+  const [publishedKeysResult, collectionResult] = await Promise.allSettled([
+    ports.site.publishedDecisionKeys(),
+    ports.sources.collect(),
+  ])
+  if (publishedKeysResult.status === 'rejected') throw publishedKeysResult.reason
+  if (collectionResult.status === 'rejected') throw collectionResult.reason
+  const publishedKeys = publishedKeysResult.value
+  const collection = collectionResult.value
   const sourceUrls = new Map(config.sources.entries.map((source) => [source.id, source.url]))
   // A configuration change starts from the recent edge again; old checkpoints describe a different editorial policy.
   const checkpoints = state.configHash && state.configHash !== configHash ? {} : state.sourceCheckpoints
@@ -332,15 +395,21 @@ export async function runPipeline(
     configHash,
     updatedAt,
     allowTestSources: options.allowTestSources ?? false,
+    // Consolidation owns same-run event grouping; gates compare against one stable cross-run publication snapshot.
+    publicationContext: recentPublications(state, config.editorial.deduplicationContextSize),
   }
   const previousDelivery = await deliverPending(context)
   const evidence = await ports.sources.collectEvidence(selection.candidates)
   for (const error of evidence.errors) context.failedSources.add(error.sourceId)
   const stories = await ports.editorial.consolidate(evidence.candidates)
-  const articles: Article[] = []
-  for (const candidate of stories) {
-    articles.push(...(await processCandidate(candidate, context)))
-  }
+  const prepared = stories.flatMap((candidate) => {
+    const item = prepareCandidate(candidate, context)
+    return item ? [item] : []
+  })
+  const outcomes = await mapWithConcurrency(prepared, config.ai.concurrency, (candidate) =>
+    evaluateCandidate(candidate, context),
+  )
+  const articles = outcomes.flatMap((outcome) => applyCandidateOutcome(outcome, context))
 
   if (options.mode === 'initial' && articles.length === 0)
     throw new Error(
@@ -377,5 +446,17 @@ export async function runPipeline(
     deliveriesPending: state.pendingDeliveries.length,
     sourceErrors: collection.errors.length,
     targetCommitSha: commit,
+  }
+}
+
+export async function runPipeline(
+  config: AppConfig,
+  ports: PipelinePorts,
+  options: RunOptions = {},
+): Promise<RunSummary> {
+  try {
+    return await executePipeline(config, ports, options)
+  } finally {
+    await ports.site.close()
   }
 }

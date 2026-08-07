@@ -12,23 +12,59 @@ const siteMarker = z.object({ schemaVersion: z.literal(1), theme: z.string().min
 
 type Checkout = { readonly directory: string; cleanup(): Promise<void> }
 
-async function cloneTarget(config: AppConfig): Promise<Checkout> {
-  const directory = await mkdtemp(path.join(tmpdir(), 'publume-site-'))
+function targetRemoteBranch(config: AppConfig): string {
+  return `refs/remotes/origin/${config.target.branch}`
+}
+
+async function fetchTarget(config: AppConfig, directory: string): Promise<boolean> {
+  const environment = targetGitEnvironment(config.target)
   const result = await runCommand(
-    ['git', 'clone', repositoryUrl(config.target.repository), directory],
-    process.cwd(),
-    targetGitEnvironment(config.target),
+    ['git', 'fetch', '--depth', '1', 'origin', `+refs/heads/${config.target.branch}:${targetRemoteBranch(config)}`],
+    directory,
+    environment,
   )
-  if (result.code !== 0) {
+  if (result.code === 0) return true
+  const branchLookup = await runCommand(
+    ['git', 'ls-remote', '--exit-code', '--heads', 'origin', config.target.branch],
+    directory,
+    environment,
+  )
+  if (branchLookup.code === 2) return false
+  throw new Error(`Target fetch failed: ${result.stderr.trim()}`)
+}
+
+async function checkoutTarget(config: AppConfig): Promise<Checkout> {
+  const directory = await mkdtemp(path.join(tmpdir(), 'publume-site-'))
+  const environment = targetGitEnvironment(config.target)
+  const repository = repositoryUrl(config.target.repository)
+  try {
+    const clone = await runCommand(
+      ['git', 'clone', '--depth', '1', '--single-branch', '--branch', config.target.branch, repository, directory],
+      process.cwd(),
+      environment,
+    )
+    if (clone.code === 0) return { directory, cleanup: () => rm(directory, { recursive: true, force: true }) }
+    const branchLookup = await runCommand(
+      ['git', 'ls-remote', '--exit-code', '--heads', repository, config.target.branch],
+      process.cwd(),
+      environment,
+    )
+    if (branchLookup.code !== 2) throw new Error(`Target fetch failed: ${clone.stderr.trim()}`)
     await rm(directory, { recursive: true, force: true })
-    throw new Error(`Target clone failed: ${result.stderr.trim()}`)
+    await mkdir(directory, { recursive: true })
+    await git(['init'], directory)
+    await git(['remote', 'add', 'origin', repository], directory)
+    await git(['checkout', '-B', config.target.branch], directory)
+  } catch (error) {
+    await rm(directory, { recursive: true, force: true })
+    throw error
   }
-  const remoteBranch = `refs/remotes/origin/${config.target.branch}`
-  const branchLookup = await runCommand(['git', 'show-ref', '--verify', '--quiet', remoteBranch], directory)
-  if (branchLookup.code === 0) await git(['checkout', '-B', config.target.branch, remoteBranch], directory)
-  else if (branchLookup.code === 1) await git(['checkout', '-B', config.target.branch], directory)
-  else throw new Error(`Target branch lookup failed: ${branchLookup.stderr.trim()}`)
   return { directory, cleanup: () => rm(directory, { recursive: true, force: true }) }
+}
+
+async function refreshTarget(config: AppConfig, directory: string): Promise<void> {
+  if (await fetchTarget(config, directory))
+    await git(['checkout', '-B', config.target.branch, targetRemoteBranch(config)], directory)
 }
 
 async function checkoutTheme(config: AppConfig): Promise<Checkout> {
@@ -145,19 +181,20 @@ async function buildSite(directory: string): Promise<void> {
 }
 
 export function createSitePublisher(config: AppConfig): SitePublisher {
+  let preparedTarget: Promise<Checkout> | undefined
+
   return {
     async publishedDecisionKeys(): Promise<ReadonlySet<string>> {
-      const target = await cloneTarget(config)
-      try {
-        return await readPublishedDecisionKeys(target.directory)
-      } finally {
-        await target.cleanup()
-      }
+      preparedTarget ??= checkoutTarget(config)
+      return readPublishedDecisionKeys((await preparedTarget).directory)
     },
 
     async publish(articles, mode): Promise<string | undefined> {
-      const target = await cloneTarget(config)
+      const prepared = preparedTarget
+      preparedTarget = undefined
+      const target = await (prepared ?? checkoutTarget(config))
       try {
+        if (prepared) await refreshTarget(config, target.directory)
         const bootstrapped = await ensureTheme(config, target.directory, mode === 'bootstrap')
         await writeSiteContent(config.site, target.directory, mode === 'bootstrap' ? [] : articles)
         if (mode === 'content' && articles.length === 0 && !bootstrapped) {
@@ -195,6 +232,13 @@ export function createSitePublisher(config: AppConfig): SitePublisher {
       } finally {
         await target.cleanup()
       }
+    },
+
+    async close(): Promise<void> {
+      const prepared = preparedTarget
+      preparedTarget = undefined
+      const target = await prepared?.catch(() => undefined)
+      await target?.cleanup()
     },
   }
 }

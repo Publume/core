@@ -786,6 +786,7 @@ function aiConfig(): AiConfig {
     allowedModels: [model],
     responseFormat: 'json_object',
     timeoutMs: positiveInteger(process.env.AI_TIMEOUT_SECONDS, 120, 'AI_TIMEOUT_SECONDS', 600) * 1_000,
+    concurrency: positiveInteger(process.env.AI_CONCURRENCY, 4, 'AI_CONCURRENCY', 20),
   }
 }
 
