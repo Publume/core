@@ -2,9 +2,14 @@ import { mkdir, readdir, readFile, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import type { SiteConfig } from '../config/model'
 import type { Article } from '../domain/content'
+import { topicIdForLabel } from '../domain/topics'
 
 function articleMarkdown(article: Article): string {
-  const topics = (article.topics ?? []).map((topic) => `  - ${JSON.stringify(topic)}`).join('\n')
+  const topicLabels = article.topics ?? []
+  const topics = topicLabels.map((topic) => `  - ${JSON.stringify(topic)}`).join('\n')
+  const topicIds = (article.topicIds ?? topicLabels.map(topicIdForLabel))
+    .map((topicId) => `  - ${JSON.stringify(topicId)}`)
+    .join('\n')
   const sources = article.sourceUrls.map((url) => `  - ${JSON.stringify(url)}`).join('\n')
   return [
     '---',
@@ -16,6 +21,8 @@ function articleMarkdown(article: Article): string {
     ...(article.score === undefined ? [] : [`score: ${article.score}`]),
     'topics:',
     topics || '  []',
+    'topicIds:',
+    topicIds || '  []',
     'sourceUrls:',
     sources,
     '---',

@@ -8,6 +8,7 @@ import {
   pruneDecisions,
 } from '../domain/decisions'
 import { candidateContentHash, isReservedTestSource, selectCandidates } from '../domain/selection'
+import { normalizeTopics } from '../domain/topics'
 import type { PipelinePorts } from './ports'
 
 export type RunSummary = {
@@ -191,12 +192,14 @@ async function processCandidate(candidate: Candidate, context: RunContext): Prom
       candidateTitle: candidate.title,
       canonicalUrl: candidate.canonicalUrl,
     })
+    const topics = normalizeTopics(gate.topics)
     return generated.map((article) => ({
       ...article,
       decisionKey,
       publishedAt: updatedAt,
       score: gate.score,
-      topics: gate.topics,
+      topics: topics.labels,
+      topicIds: topics.ids,
     }))
   } catch (error) {
     counters.failed += 1

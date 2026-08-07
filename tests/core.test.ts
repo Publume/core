@@ -5,6 +5,7 @@ import { canonicalUrl } from '../src/adapters/sources/candidate'
 import { createSourceReader, type FetchLike } from '../src/adapters/sources/reader'
 import { loadConfig } from '../src/config/load'
 import { hashValue, makeDecisionKey, pruneDecisions } from '../src/domain/decisions'
+import { normalizeTopics, topicIdForLabel } from '../src/domain/topics'
 
 const response = (body: string, contentType: string) => new Response(body, { headers: { 'content-type': contentType } })
 
@@ -177,6 +178,15 @@ describe('configuration and source boundaries', () => {
     expect(canonicalUrl('https://example.test/a?utm_source=x&keep=1#part')).toBe('https://example.test/a?keep=1')
     expect(hashValue('same')).toBe(hashValue('same'))
     expect(makeDecisionKey('s', 'e', 'c', 'config')).toBe(makeDecisionKey('s', 'e', 'c', 'config'))
+  })
+
+  it('creates stable collision-resistant topic identities from normalized labels', () => {
+    expect(topicIdForLabel(' Security ')).toBe(topicIdForLabel('security'))
+    expect(topicIdForLabel('C++')).not.toBe(topicIdForLabel('C#'))
+    expect(normalizeTopics([' security ', 'security', '', 'AI'])).toEqual({
+      labels: ['security', 'AI'],
+      ids: [topicIdForLabel('security'), topicIdForLabel('AI')],
+    })
   })
 
   it('writes decisions atomically and reads a missing state as empty', async () => {

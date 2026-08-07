@@ -254,6 +254,8 @@ try {
     const sourceUrl = sourceLiteral ? (JSON.parse(sourceLiteral) as unknown) : undefined
     if (typeof sourceUrl !== 'string' || !articleHtml.includes(sourceUrl))
       throw new Error('real theme article is missing its source link')
+    if (!articleMarkdown.includes('topicIds:') || !articleMarkdown.includes('technology-'))
+      throw new Error('published article is missing stable topic identities')
     for (const localizedText of ['来源', '编辑说明', '自动化系统协助筛选与起草']) {
       if (!articleHtml.includes(localizedText))
         throw new Error(`real theme article is missing localized text: ${localizedText}`)

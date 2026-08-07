@@ -7,6 +7,7 @@ import { runPipeline } from '../src/app/pipeline'
 import type { PipelinePorts, SitePublisher } from '../src/app/ports'
 import { loadConfig } from '../src/config/load'
 import type { AppConfig } from '../src/config/model'
+import { topicIdForLabel } from '../src/domain/topics'
 
 const feedFixture: FetchLike = async (input) => {
   if (String(input).endsWith('/feed.xml'))
@@ -109,6 +110,8 @@ describe('pipeline idempotence', () => {
         aiClient: fakeAi(calls),
         publish: async (articles, mode) => {
           expect(articles).toHaveLength(1)
+          expect(articles[0]?.topics).toEqual(['security'])
+          expect(articles[0]?.topicIds).toEqual([topicIdForLabel('security')])
           publishedMode = mode
           return 'initial-commit'
         },

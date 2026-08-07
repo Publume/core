@@ -35,6 +35,7 @@ export type Article = GeneratedArticle & {
   readonly publishedAt: string
   readonly score?: number
   readonly topics?: readonly string[]
+  readonly topicIds?: readonly string[]
 }
 
 export type CollectionResult = {

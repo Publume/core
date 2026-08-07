@@ -121,6 +121,10 @@ A theme may ship sample articles for standalone development. During initial depl
 Core clears those examples before writing validated generated articles;
 generated articles are the sole production content in that path.
 
+Published article frontmatter keeps human-readable topic labels together with
+deterministic topic IDs. Themes use the IDs for stable archive URLs while older
+articles that contain labels only remain readable during theme upgrades.
+
 ## State and idempotence
 
 `state/decisions.json` is the bounded source of prior decisions. A decision key
