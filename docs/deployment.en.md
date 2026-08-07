@@ -173,16 +173,17 @@ channel configurations are:
 | `telegram` | `botToken`, `chatId` | `chatId` can be a numeric ID or `@channel_name`; the bot must be allowed to send messages. |
 | `discord` | `webhookUrl` | The complete HTTPS Discord Incoming Webhook URL. |
 | `slack` | `webhookUrl` | The complete HTTPS Slack Incoming Webhook URL. |
-| `feishu` | `webhookUrl` | A Feishu custom-bot webhook. |
-| `dingtalk` | `webhookUrl` | A DingTalk custom-bot webhook. |
+| `feishu` | `webhookUrl`; optional `signingSecret` | A Feishu custom-bot webhook; provide the secret when signature verification is enabled. |
+| `dingtalk` | `webhookUrl`; optional `signingSecret` | A DingTalk custom-bot webhook; provide the secret when signing is enabled. |
 | `wecom` | `webhookUrl` | A WeCom group-bot webhook. |
 | `ntfy` | `topicUrl` | A complete HTTPS topic URL, such as `https://ntfy.sh/your-private-topic`. |
 | `matrix` | `homeserver`, `roomId`, `accessToken` | The homeserver must use HTTPS and the account must be able to send to the room. |
 | `resend` | `apiKey`, `from`, `to` | `from` is a verified sender; `to` is an array containing 1–20 email addresses. |
 | `webhook` | `url`; optional `headers` | A generic HTTPS webhook; `headers` is a string-to-string object for authentication headers. |
 
-Feishu, DingTalk, and WeCom bots must accept an ordinary text request; the current adapters do not calculate an additional
-platform signature. To disable all notifications, delete `DELIVERY_CONFIG` or set it to `[]`.
+Core calculates the platform-specific Feishu or DingTalk signature when `signingSecret` is configured. If a bot instead uses a keyword
+security rule, that keyword must occur in the article title or summary. WeCom bots must accept an ordinary text request. To disable all
+notifications, delete `DELIVERY_CONFIG` or set it to `[]`.
 
 Notifications are sent after `initial` or a normal `run` publishes a new article. `bootstrap` and runs with no new article send nothing.
 Check the run summary afterward:

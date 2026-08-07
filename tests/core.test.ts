@@ -62,6 +62,10 @@ describe('configuration and source boundaries', () => {
     expect(config.state.maxRecords).toBe(1_000)
     expect(config.state.maxPendingDeliveries).toBe(500)
     expect(config.delivery.channels).toEqual([])
+    expect(config.editorial.gatePrompt).toContain('material new information')
+    expect(config.editorial.gatePrompt).toContain('insufficient-evidence')
+    expect(config.editorial.articlePrompt).toContain('reader-first')
+    expect(config.editorial.articlePrompt).toContain('Do not pad')
     expect(config.site.url).toBe('')
     expect(config.site.locale).toBe('en')
     expect(config.site.outputLanguages).toEqual(['en'])
@@ -75,13 +79,53 @@ describe('configuration and source boundaries', () => {
       configEnv({
         DELIVERY_CONFIG: JSON.stringify([
           { id: 'personal-tg', type: 'telegram', botToken: '1234:bot-token', chatId: '1234' },
-          { id: 'team', type: 'discord', webhookUrl: 'https://discord.com/api/webhooks/1/token' },
+          { id: 'discord', type: 'discord', webhookUrl: 'https://discord.com/api/webhooks/1/token' },
+          { id: 'slack', type: 'slack', webhookUrl: 'https://hooks.slack.com/services/example' },
+          {
+            id: 'feishu',
+            type: 'feishu',
+            webhookUrl: 'https://open.feishu.cn/open-apis/bot/v2/hook/example',
+            signingSecret: 'secret',
+          },
+          {
+            id: 'dingtalk',
+            type: 'dingtalk',
+            webhookUrl: 'https://oapi.dingtalk.com/robot/send?access_token=example',
+            signingSecret: 'secret',
+          },
+          { id: 'wecom', type: 'wecom', webhookUrl: 'https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=example' },
           { id: 'push', type: 'ntfy', topicUrl: 'https://ntfy.sh/example-topic' },
+          {
+            id: 'matrix',
+            type: 'matrix',
+            homeserver: 'https://matrix.example.test',
+            roomId: '!room:example.test',
+            accessToken: 'token',
+          },
+          {
+            id: 'resend',
+            type: 'resend',
+            apiKey: 're_test',
+            from: 'brief@example.test',
+            to: ['reader@example.test'],
+          },
+          { id: 'webhook', type: 'webhook', url: 'https://example.test/hook', headers: { authorization: 'secret' } },
         ]),
       }),
     )
 
-    expect(config.delivery.channels.map((channel) => channel.type)).toEqual(['telegram', 'discord', 'ntfy'])
+    expect(config.delivery.channels.map((channel) => channel.type)).toEqual([
+      'telegram',
+      'discord',
+      'slack',
+      'feishu',
+      'dingtalk',
+      'wecom',
+      'ntfy',
+      'matrix',
+      'resend',
+      'webhook',
+    ])
     expect(() =>
       loadConfig(
         configEnv({

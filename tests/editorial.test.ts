@@ -111,12 +111,16 @@ describe('editorial output boundary', () => {
 
     for (const [tag, name] of requestedLanguages) expect(systemPrompt).toContain(`${tag} = ${name}`)
     expect(systemPrompt).toContain('Keep each article.language value as its original BCP 47 tag')
+    expect(systemPrompt).toContain('Required JSON container example')
+    expect(systemPrompt).toContain(candidate.canonicalUrl)
   })
 
   it('gives the publication gate recent approved coverage for semantic deduplication', async () => {
     let userPrompt = ''
+    let systemPrompt = ''
     const editorial = createEditorial(config, {
       async complete(request) {
+        systemPrompt = request.system
         userPrompt = request.user
         return {
           choices: [
@@ -147,6 +151,7 @@ describe('editorial output boundary', () => {
     await editorial.evaluate(candidate, recentPublications)
 
     expect(JSON.parse(userPrompt).recentPublications).toEqual(recentPublications)
+    expect(systemPrompt).toContain('Required JSON shape example')
   })
 
   it('rejects raw HTML from generated Markdown', () => {

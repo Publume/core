@@ -36,6 +36,7 @@
     "quality": "biome check .",
     "test": "bun test",
     "acceptance": "bun run scripts/acceptance.ts",
+    "eval:prompt": "bun run scripts/prompt-eval.ts",
     "action:local": "bun scripts/local-action.ts",
     "check": "bun run quality && bun run typecheck && bun test && bun run acceptance"
   },

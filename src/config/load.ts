@@ -2,11 +2,19 @@ import path from 'node:path'
 import { z } from 'zod'
 import type { AppConfig, DeliveryChannelConfig, SiteConfig, Source } from './model'
 
-const DEFAULT_GATE_PROMPT =
-  'Act as a publication gate. Decide whether the candidate is important, verifiable, sufficiently sourced, and worth publishing. Reject fixtures, placeholders, internal logs, duplicated reports, unsupported claims, promotional material, and reserved test sources. Use only the supplied candidate and source evidence. Return strict JSON.'
+export const DEFAULT_GATE_PROMPT = [
+  'Act as the publication editor for a source-linked information site. Decide whether the candidate contains material new information for the configured audience, not merely whether it is topically related.',
+  'Evaluate reader consequence, novelty, specificity, timeliness, source authority, and whether each important claim is supported by the supplied evidence. A single primary or authoritative source can be sufficient when the article stays within what that source establishes; otherwise reject with the exact risk tag insufficient-evidence.',
+  'Reject placeholders, fixtures, internal logs, stale or duplicate coverage, vague announcements, promotional copy, unsupported predictions, and opinion presented as fact. Use concise, reusable, human-readable topic labels in consistent title case, never slug syntax. Explain the decisive evidence or deficiency in reason instead of repeating the title.',
+  'Use only the supplied candidate, source evidence, audience instructions, and recent publication context. Never invent facts, quotations, figures, chronology, or additional sources. Return strict JSON.',
+].join('\n')
 
-const DEFAULT_ARTICLE_PROMPT =
-  'Act as a careful editor. Use only the approved candidate and its source URLs to produce a factual Markdown article. Keep facts, attributed opinions, and inferences distinct. Do not invent facts, quotations, figures, or sources. Do not provide professional advice. Return strict JSON.'
+export const DEFAULT_ARTICLE_PROMPT = [
+  'Act as a careful, reader-first editor for a source-linked publication. Turn the approved candidate into a useful standalone Markdown article while staying strictly within the supplied evidence.',
+  'Write a precise, non-clickbait title that states the development once without overlapping phrases; a one- or two-sentence summary that states the development and why it matters; and a body that leads with the new information, then adds only supported context. Attribute claims and opinions to their source, preserve uncertainty, and distinguish facts from inference.',
+  'Choose length from the amount of evidence. Avoid tautologies and repeated wording within a sentence. Do not pad sparse material, repeat the summary as the opening paragraph, add generic background, use empty scene-setting, or end with boilerplate conclusions. End after the last supported point; never append a source-exhaustion disclaimer or a call to action such as visiting, learning more, or getting started. Use short sections or lists only when they improve comprehension.',
+  'Do not refer to the input as a candidate or supplied text. Do not invent facts, quotations, figures, dates, people, organizations, links, or sources. Do not place Markdown links or bare URLs in the body; source links are rendered separately from sourceUrls. Never reconstruct a destination from linked text or prior knowledge. Do not provide professional advice. Return strict JSON.',
+].join('\n')
 
 type Environment = Record<string, string | undefined>
 
@@ -23,7 +31,13 @@ const deliveryChannelSchema = z.discriminatedUnion('type', [
     botToken: z.string().regex(/^\d+:[A-Za-z0-9_-]+$/),
     chatId: z.string().regex(/^(?:-?\d+|@[A-Za-z][A-Za-z0-9_]{4,31})$/),
   }),
-  z.object({ id: channelId, type: z.enum(['discord', 'slack', 'feishu', 'dingtalk', 'wecom']), webhookUrl: httpsUrl }),
+  z.object({ id: channelId, type: z.enum(['discord', 'slack', 'wecom']), webhookUrl: httpsUrl }),
+  z.object({
+    id: channelId,
+    type: z.enum(['feishu', 'dingtalk']),
+    webhookUrl: httpsUrl,
+    signingSecret: z.string().min(1).max(512).optional(),
+  }),
   z.object({ id: channelId, type: z.literal('ntfy'), topicUrl: httpsUrl }),
   z.object({
     id: channelId,

@@ -166,16 +166,17 @@ https://你的用户名.github.io/my-publume-site/
 | `telegram` | `botToken`, `chatId` | `chatId` 可以是数字 ID 或 `@channel_name`。Bot 必须有发送权限。 |
 | `discord` | `webhookUrl` | Discord Incoming Webhook 的完整 HTTPS 地址。 |
 | `slack` | `webhookUrl` | Slack Incoming Webhook 的完整 HTTPS 地址。 |
-| `feishu` | `webhookUrl` | 飞书自定义机器人 Webhook。 |
-| `dingtalk` | `webhookUrl` | 钉钉自定义机器人 Webhook。 |
+| `feishu` | `webhookUrl`；可选 `signingSecret` | 飞书自定义机器人 Webhook；启用签名校验时同时填写密钥。 |
+| `dingtalk` | `webhookUrl`；可选 `signingSecret` | 钉钉自定义机器人 Webhook；启用加签时同时填写密钥。 |
 | `wecom` | `webhookUrl` | 企业微信群机器人 Webhook。 |
 | `ntfy` | `topicUrl` | 完整 HTTPS Topic 地址，例如 `https://ntfy.sh/your-private-topic`。 |
 | `matrix` | `homeserver`, `roomId`, `accessToken` | Homeserver 必须是 HTTPS，账号必须能向目标 Room 发消息。 |
 | `resend` | `apiKey`, `from`, `to` | `from` 是已验证发件地址；`to` 是包含 1–20 个邮箱地址的数组。 |
 | `webhook` | `url`；可选 `headers` | 通用 HTTPS Webhook；`headers` 是字符串键值对象，可放认证 Header。 |
 
-飞书、钉钉和企业微信必须使用能够接受普通文本请求的机器人配置；当前适配器不会另外计算平台签名。禁用全部通知
-时，可以删除 `DELIVERY_CONFIG`，或把它设为 `[]`。
+Core 会在配置 `signingSecret` 后分别按飞书和钉钉规范计算签名。若机器人改用关键词安全策略，配置的关键词必须出现在
+文章标题或摘要中；企业微信必须使用能够接受普通文本请求的群机器人配置。禁用全部通知时，可以删除
+`DELIVERY_CONFIG`，或把它设为 `[]`。
 
 `initial` 或普通 `run` 发布新文章后会发送通知；`bootstrap` 和没有新文章的运行不会发送。运行结束后检查摘要：
 

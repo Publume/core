@@ -46,8 +46,14 @@ export type DeliveryChannelConfig =
   | { readonly id: string; readonly type: 'telegram'; readonly botToken: string; readonly chatId: string }
   | {
       readonly id: string
-      readonly type: 'discord' | 'slack' | 'feishu' | 'dingtalk' | 'wecom'
+      readonly type: 'discord' | 'slack' | 'wecom'
       readonly webhookUrl: string
+    }
+  | {
+      readonly id: string
+      readonly type: 'feishu' | 'dingtalk'
+      readonly webhookUrl: string
+      readonly signingSecret?: string
     }
   | { readonly id: string; readonly type: 'ntfy'; readonly topicUrl: string }
   | {

@@ -276,7 +276,7 @@ async function deliverPending(context: RunContext): Promise<{ sent: number; fail
     }
     pending.attempts += 1
     try {
-      await channel.send(pending.article)
+      await channel.send(pending.article, pending.id)
       context.state.pendingDeliveries = context.state.pendingDeliveries.filter(
         (candidate) => candidate.id !== pending.id,
       )

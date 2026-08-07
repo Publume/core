@@ -25,7 +25,17 @@ const articleSchema = z
   .strict()
 
 const generationSchema = z.object({ articles: z.array(articleSchema) }).strict()
-const blockingRisks = new Set(['block', 'unsafe', 'insufficient-evidence', 'no-evidence'])
+const blockingRisks = new Set([
+  'block',
+  'duplicate',
+  'insufficient-evidence',
+  'no-evidence',
+  'promotional',
+  'speculative',
+  'stale',
+  'unsafe',
+  'unverified',
+])
 const outputLanguageNames: Readonly<Partial<Record<string, string>>> = {
   'zh-CN': 'Simplified Chinese',
   'zh-TW': 'Traditional Chinese',
@@ -81,7 +91,7 @@ function gatePrompt(config: EditorialConfig): string {
   return [
     config.gatePrompt,
     config.instructions,
-    'Treat recentPublications as previously approved coverage. Reject the candidate when it describes the same underlying event without a material new development. Return only strict JSON with publish, score, reason, topics, risks. score must be a number from 0 to 1, never a percentage from 0 to 100. Do not write an article. Do not invent facts.',
+    `Treat recentPublications as previously approved coverage. Reject the candidate when it describes the same underlying event without a material new development. The configured minimum publish score is ${config.publishThreshold}; set publish to true only when the evidence supports a score at or above that threshold. Use risks only for short machine-readable tags such as duplicate, insufficient-evidence, promotional, speculative, stale, unsafe, or unverified. Return only strict JSON with publish, score, reason, topics, risks. score must be a number from 0 to 1, never a percentage from 0 to 100. Do not write an article. Do not invent facts. Required JSON shape example: {"publish":false,"score":0.2,"reason":"Decisive evidence or deficiency","topics":["topic"],"risks":["insufficient-evidence"]}.`,
   ].join('\n\n')
 }
 
@@ -91,11 +101,20 @@ function describeOutputLanguages(languages: readonly string[]): string {
     .join(', ')
 }
 
-function articlePrompt(config: EditorialConfig): string {
+function articlePrompt(config: EditorialConfig, candidate: Candidate): string {
+  const example = {
+    articles: config.languages.map((language) => ({
+      language,
+      title: 'Source-bounded title',
+      summary: 'One- or two-sentence source-bounded summary.',
+      body: 'Source-bounded Markdown body.',
+      sourceUrls: [candidate.canonicalUrl],
+    })),
+  }
   return [
     config.articlePrompt,
     config.instructions,
-    `Generate each article in the exact requested language: ${describeOutputLanguages(config.languages)}. Keep each article.language value as its original BCP 47 tag. Return exactly one JSON object with an articles array containing one object for every requested language (${config.languages.join(', ')}). Each article object must use exactly these keys: language, title, summary, body, sourceUrls. body must be Markdown text and sourceUrls must be an array of URLs. Use only the candidate and its source URL. Do not use a content key. Return strict JSON and no Markdown code fence.`,
+    `Generate each article in the exact requested language: ${describeOutputLanguages(config.languages)}. Keep each article.language value as its original BCP 47 tag. All language versions must preserve the same facts, uncertainty, attribution, and source set while using idiomatic phrasing rather than literal translation. Return exactly one JSON object with an articles array containing one object for every requested language (${config.languages.join(', ')}). Each article object must use exactly these keys: language, title, summary, body, sourceUrls. body must be Markdown text and sourceUrls must contain only the candidate canonical URL. Do not use a content key. Return strict JSON and no Markdown code fence. Required JSON container example (shape only; replace the prose with the article): ${JSON.stringify(example)}.`,
   ].join('\n\n')
 }
 
@@ -146,7 +165,7 @@ export function createEditorial(config: EditorialConfig, client: AiClient): Edit
     async generate(candidate, decision): Promise<readonly GeneratedArticle[]> {
       const result = parseResponse(
         await client.complete({
-          system: articlePrompt(config),
+          system: articlePrompt(config, candidate),
           user: JSON.stringify({ candidate, gate: decision, languages: config.languages }),
         }),
         generationSchema,

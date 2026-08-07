@@ -165,6 +165,11 @@ The acceptance test creates a minimal theme and temporary Git repositories at
 runtime, and uses local fixture sources plus a fake AI client. It never calls a
 real AI provider or pushes to GitHub.
 
+Prompt changes have a separate live evaluation that uses the configured AI
+provider without collecting or publishing content. See
+[Prompt evaluation](docs/prompt-eval.md) for its dataset, thresholds, and
+evidence boundary.
+
 To run the same acceptance flow against a local Publume Themes checkout:
 
 ```bash

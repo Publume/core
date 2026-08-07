@@ -29,7 +29,7 @@ export interface SitePublisher {
 
 export interface DeliveryChannel {
   readonly id: string
-  send(article: DeliveryArticle): Promise<void>
+  send(article: DeliveryArticle, deliveryId: string): Promise<void>
 }
 
 export type PipelinePorts = {

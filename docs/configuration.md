@@ -87,6 +87,8 @@ Core currently supports `telegram`, `discord`, `slack`, `feishu`, `dingtalk`,
 `wecom`, `ntfy`, `matrix`, `resend`, and generic `webhook` channels. HTTP
 endpoints must use HTTPS. Resend has a free quota but remains an external
 provider; the other hosted services may also enforce their own fair-use limits.
+Feishu and DingTalk accept an optional `signingSecret`; when present, Core adds
+the platform-specific timestamp and HMAC signature to every request.
 Never store this JSON as a repository variable or commit it to a file.
 
 ## Theme source
