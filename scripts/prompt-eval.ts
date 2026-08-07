@@ -132,6 +132,7 @@ function candidate(
     canonicalUrl,
     title,
     content,
+    contentOrigin: 'article-page',
     publishedAt,
   }
 }
@@ -689,16 +690,19 @@ async function evaluateVariant(variant: PromptVariant, client: AiClient, concurr
     }
   })
 
-  const approvedDecision: GateDecision = {
-    publish: true,
-    score: 0.95,
-    reason: 'Approved eval fixture with source-bounded facts.',
-    topics: ['technology'],
-    risks: [],
-  }
   const articles = await mapLimit(articleCases, concurrency, async (evalCase): Promise<ArticleCaseResult> => {
     const started = performance.now()
     try {
+      const approvedDecision: GateDecision = {
+        publish: true,
+        score: 0.95,
+        reason: 'Approved eval fixture with source-bounded facts.',
+        topics: ['technology'],
+        risks: [],
+        verifiedFacts: [evalCase.candidate.content],
+        uncertainties: [],
+        sourceUrls: [evalCase.candidate.canonicalUrl],
+      }
       const generated = await editorial.generate(evalCase.candidate, approvedDecision)
       const article = generated[0]
       if (!article) throw new Error('AI response did not contain an article')

@@ -19,6 +19,7 @@ const candidate: Candidate = {
   canonicalUrl: 'https://source.example/article',
   title: 'Source article',
   content: 'Source-backed content.',
+  contentOrigin: 'article-page',
 }
 
 const decision: GateDecision = {
@@ -27,6 +28,9 @@ const decision: GateDecision = {
   reason: 'important',
   topics: ['technology'],
   risks: [],
+  verifiedFacts: ['The source reports a material technology update.'],
+  uncertainties: [],
+  sourceUrls: [candidate.canonicalUrl],
 }
 
 function articleClient(body: string): AiClient {
@@ -132,6 +136,9 @@ describe('editorial output boundary', () => {
                   reason: 'duplicate event',
                   topics: [],
                   risks: [],
+                  verifiedFacts: [],
+                  uncertainties: [],
+                  sourceUrls: [],
                 }),
               },
             },
@@ -162,5 +169,116 @@ describe('editorial output boundary', () => {
   it('allows Markdown autolinks that are not HTML elements', async () => {
     const editorial = createEditorial(config, articleClient('Read <https://source.example/article> for details.'))
     expect(await editorial.generate(candidate, decision)).toHaveLength(1)
+  })
+
+  it('merges reports only through an exhaustive, non-overlapping consolidation result', async () => {
+    const second: Candidate = {
+      sourceId: 'source-2',
+      externalId: 'entry-2',
+      canonicalUrl: 'https://second.example.org/article',
+      title: 'Second report of the same event',
+      content: 'An independent report describes the same dated technology update.',
+      contentOrigin: 'article-page',
+    }
+    const editorial = createEditorial(config, {
+      async complete() {
+        return {
+          choices: [
+            {
+              message: {
+                content: JSON.stringify({
+                  groups: [{ reportIndexes: [0, 1], reason: 'The same actors and dated event' }],
+                }),
+              },
+            },
+          ],
+        }
+      },
+    })
+
+    const stories = await editorial.consolidate([candidate, second])
+
+    expect(stories).toHaveLength(1)
+    expect(stories[0]?.reports?.map((report) => report.canonicalUrl)).toEqual([
+      candidate.canonicalUrl,
+      second.canonicalUrl,
+    ])
+  })
+
+  it('rejects consolidation that omits or duplicates a report index', async () => {
+    const editorial = createEditorial(config, {
+      async complete() {
+        return {
+          choices: [
+            {
+              message: {
+                content: JSON.stringify({
+                  groups: [{ reportIndexes: [0, 0], reason: 'Invalid duplicate index' }],
+                }),
+              },
+            },
+          ],
+        }
+      },
+    })
+
+    await expect(editorial.consolidate([candidate, { ...candidate, externalId: 'entry-2' }])).rejects.toThrow(
+      'every report index exactly once',
+    )
+  })
+
+  it('rejects gate evidence URLs that were not fetched for the merged story', async () => {
+    const editorial = createEditorial(config, {
+      async complete() {
+        return {
+          choices: [
+            {
+              message: {
+                content: JSON.stringify({
+                  publish: true,
+                  score: 0.9,
+                  reason: 'important',
+                  topics: ['technology'],
+                  risks: [],
+                  verifiedFacts: ['A claim from an unrelated source.'],
+                  uncertainties: [],
+                  sourceUrls: ['https://unfetched.example.org/article'],
+                }),
+              },
+            },
+          ],
+        }
+      },
+    })
+
+    await expect(editorial.evaluate(candidate, [])).rejects.toThrow('unknown evidence source URL')
+  })
+
+  it('does not accept a discovery summary as verified article evidence', async () => {
+    const summary = { ...candidate, contentOrigin: 'source-summary' as const }
+    const editorial = createEditorial(config, {
+      async complete() {
+        return {
+          choices: [
+            {
+              message: {
+                content: JSON.stringify({
+                  publish: true,
+                  score: 0.9,
+                  reason: 'Claims are present only in a feed summary.',
+                  topics: ['technology'],
+                  risks: [],
+                  verifiedFacts: ['A discovery summary claim.'],
+                  uncertainties: [],
+                  sourceUrls: [summary.canonicalUrl],
+                }),
+              },
+            },
+          ],
+        }
+      },
+    })
+
+    await expect(editorial.evaluate(summary, [])).rejects.toThrow('unknown evidence source URL')
   })
 })

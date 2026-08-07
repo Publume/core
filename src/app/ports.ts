@@ -2,6 +2,7 @@ import type {
   Article,
   Candidate,
   CollectionResult,
+  EvidenceCollectionResult,
   GateDecision,
   GeneratedArticle,
   PublicationReference,
@@ -10,9 +11,11 @@ import type { DecisionState, DeliveryArticle } from '../domain/decisions'
 
 export interface SourceReader {
   collect(): Promise<CollectionResult>
+  collectEvidence(candidates: readonly Candidate[]): Promise<EvidenceCollectionResult>
 }
 
 export interface Editorial {
+  consolidate(candidates: readonly Candidate[]): Promise<readonly Candidate[]>
   evaluate(candidate: Candidate, recentPublications: readonly PublicationReference[]): Promise<GateDecision>
   generate(candidate: Candidate, decision: GateDecision): Promise<readonly GeneratedArticle[]>
 }

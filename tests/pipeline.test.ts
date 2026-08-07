@@ -15,7 +15,10 @@ const feedFixture: FetchLike = async (input) => {
       '<?xml version="1.0"?><rss version="2.0"><channel><item><guid>pipeline-1</guid><title>Pipeline signal</title><link>https://example.test/pipeline-1</link><description>A useful signal with enough context for publication.</description></item></channel></rss>',
       { headers: { 'content-type': 'application/rss+xml' } },
     )
-  return new Response('{}', { headers: { 'content-type': 'application/json' } })
+  return new Response(
+    '<article><h1>Pipeline signal</h1><p>A complete article page with enough verified evidence for publication.</p></article>',
+    { headers: { 'content-type': 'text/html' } },
+  )
 }
 
 function configEnv(overrides: Record<string, string> = {}): Record<string, string> {
@@ -37,7 +40,24 @@ function fakeAi(calls: { count: number }): AiClient {
   return {
     async complete(request) {
       calls.count += 1
-      const user = JSON.parse(request.user) as { candidate?: { canonicalUrl?: string }; languages?: string[] }
+      const user = JSON.parse(request.user) as {
+        story?: { reports?: { canonicalUrl: string }[] }
+        gate?: { sourceUrls?: string[] }
+        languages?: string[]
+        reports?: unknown[]
+      }
+      if (user.reports)
+        return {
+          choices: [
+            {
+              message: {
+                content: JSON.stringify({
+                  groups: user.reports.map((_, index) => ({ reportIndexes: [index], reason: 'Distinct report' })),
+                }),
+              },
+            },
+          ],
+        }
       if (request.user.includes('Decide whether'))
         return {
           choices: [
@@ -49,6 +69,9 @@ function fakeAi(calls: { count: number }): AiClient {
                   reason: 'important',
                   topics: ['security'],
                   risks: [],
+                  verifiedFacts: ['The report contains a material security update.'],
+                  uncertainties: [],
+                  sourceUrls: user.story?.reports?.map((report) => report.canonicalUrl) ?? [],
                 }),
               },
             },
@@ -64,7 +87,7 @@ function fakeAi(calls: { count: number }): AiClient {
                   title: `Article ${language}`,
                   summary: 'Summary',
                   body: 'Body with verified source context.',
-                  sourceUrls: [user.candidate?.canonicalUrl],
+                  sourceUrls: user.gate?.sourceUrls ?? [],
                 })),
               }),
             },
@@ -119,14 +142,14 @@ describe('pipeline idempotence', () => {
       { mode: 'initial', allowTestSources: true },
     )
 
-    expect(result).toMatchObject({ generated: 1, published: 1, targetCommitSha: 'initial-commit' })
+    expect(result).toMatchObject({ evidenceFetched: 1, generated: 1, published: 1, targetCommitSha: 'initial-commit' })
     expect(calls.count).toBe(2)
     expect(publishedMode).toBe('content')
   })
 
   it('fails initial deployment instead of deploying an empty site when no candidate is publishable', async () => {
     const root = `/tmp/publume-empty-initial-${Date.now()}-${Math.random()}`
-    const config = loadConfig(configEnv({ MINIMUM_CONTENT_LENGTH: '80' }), { rootDir: root })
+    const config = loadConfig(configEnv({ MINIMUM_CONTENT_LENGTH: '200' }), { rootDir: root })
     let publishes = 0
 
     await expect(
@@ -213,6 +236,71 @@ describe('pipeline idempotence', () => {
     expect(deliveryAttempts).toBe(2)
   })
 
+  it('retries pending deliveries before report consolidation can fail', async () => {
+    const root = `/tmp/publume-delivery-before-consolidation-${Date.now()}-${Math.random()}`
+    const config = loadConfig(configEnv(), { rootDir: root })
+    const decisions = createFileDecisionStore(config.state.path)
+    await decisions.save({
+      version: 1,
+      decisions: {},
+      sourceCheckpoints: {},
+      pendingDeliveries: [
+        {
+          id: 'pending-1',
+          channelId: 'personal',
+          article: {
+            language: 'en',
+            title: 'Pending article',
+            summary: 'Pending summary',
+            sourceUrls: ['https://example.test/pending'],
+          },
+          createdAt: '2026-08-05T12:00:00.000Z',
+          attempts: 0,
+        },
+      ],
+    })
+    const fetchFn: FetchLike = async (input) => {
+      if (String(input).endsWith('/feed.xml'))
+        return new Response(
+          `<?xml version="1.0"?><rss version="2.0"><channel>
+            <item><guid>one</guid><title>Report one</title><link>https://example.test/one</link><description>First discovery summary.</description></item>
+            <item><guid>two</guid><title>Report two</title><link>https://example.test/two</link><description>Second discovery summary.</description></item>
+          </channel></rss>`,
+          { headers: { 'content-type': 'application/rss+xml' } },
+        )
+      return new Response('<article><p>Complete article evidence for the selected report.</p></article>', {
+        headers: { 'content-type': 'text/html' },
+      })
+    }
+    let deliveryAttempts = 0
+
+    await expect(
+      runPipeline(
+        config,
+        testPorts(config, {
+          fetchFn,
+          aiClient: {
+            async complete() {
+              throw new Error('consolidation unavailable')
+            },
+          },
+          delivery: [
+            {
+              id: 'personal',
+              async send() {
+                deliveryAttempts += 1
+              },
+            },
+          ],
+        }),
+        { allowTestSources: true },
+      ),
+    ).rejects.toThrow('consolidation unavailable')
+
+    expect(deliveryAttempts).toBe(1)
+    expect((await decisions.load()).pendingDeliveries).toEqual([])
+  })
+
   it('discards queued deliveries when their channel is removed', async () => {
     const root = `/tmp/publume-delivery-removed-${Date.now()}-${Math.random()}`
     const config = loadConfig(configEnv(), { rootDir: root })
@@ -243,7 +331,7 @@ describe('pipeline idempotence', () => {
 
   it('reconsiders a hard rejection when its content threshold changes', async () => {
     const root = `/tmp/publume-threshold-${Date.now()}-${Math.random()}`
-    const strict = loadConfig(configEnv({ MINIMUM_CONTENT_LENGTH: '80' }), { rootDir: root })
+    const strict = loadConfig(configEnv({ MINIMUM_CONTENT_LENGTH: '200' }), { rootDir: root })
     const relaxed = loadConfig(configEnv({ MINIMUM_CONTENT_LENGTH: '40' }), { rootDir: root })
     const calls = { count: 0 }
 
@@ -271,7 +359,16 @@ describe('pipeline idempotence', () => {
           choices: [
             {
               message: {
-                content: JSON.stringify({ publish: false, score: 0.1, reason: 'not important', topics: [], risks: [] }),
+                content: JSON.stringify({
+                  publish: false,
+                  score: 0.1,
+                  reason: 'not important',
+                  topics: [],
+                  risks: [],
+                  verifiedFacts: [],
+                  uncertainties: [],
+                  sourceUrls: [],
+                }),
               },
             },
           ],
@@ -299,40 +396,65 @@ describe('pipeline idempotence', () => {
     expect(result.targetCommitSha).toBe('config-commit')
   })
 
-  it('supplies earlier approved candidates to later gates for semantic deduplication', async () => {
+  it('merges reports of one event before evidence evaluation and publishes their verified source set', async () => {
     const root = `/tmp/publume-semantic-dedup-${Date.now()}-${Math.random()}`
     const config = loadConfig(configEnv({ SOURCE_URLS: 'https://example.test/events.xml' }), { rootDir: root })
-    const fetchFn: FetchLike = async () =>
-      new Response(
-        `<?xml version="1.0"?><rss version="2.0"><channel>
-          <item><guid>event-a</guid><title>Protocol launches upgrade</title><link>https://example.test/event-a</link><pubDate>Wed, 05 Aug 2026 11:00:00 GMT</pubDate><description>The protocol launched a material network upgrade with enough source context.</description></item>
-          <item><guid>event-b</guid><title>Network upgrade goes live</title><link>https://example.test/event-b</link><pubDate>Wed, 05 Aug 2026 10:00:00 GMT</pubDate><description>A second outlet reports that the same network upgrade is now live.</description></item>
-        </channel></rss>`,
-        { headers: { 'content-type': 'application/rss+xml' } },
+    const fetchFn: FetchLike = async (input) => {
+      if (String(input).endsWith('/events.xml'))
+        return new Response(
+          `<?xml version="1.0"?><rss version="2.0"><channel>
+            <item><guid>event-a</guid><title>Protocol launches upgrade</title><link>https://example.test/event-a</link><pubDate>Wed, 05 Aug 2026 11:00:00 GMT</pubDate><description>The protocol launched a material network upgrade with enough source context.</description></item>
+            <item><guid>event-b</guid><title>Network upgrade goes live</title><link>https://example.test/event-b</link><pubDate>Wed, 05 Aug 2026 10:00:00 GMT</pubDate><description>A second outlet reports that the same network upgrade is now live.</description></item>
+          </channel></rss>`,
+          { headers: { 'content-type': 'application/rss+xml' } },
+        )
+      return new Response(
+        '<article><h1>Network upgrade report</h1><p>The network upgrade is live with complete article evidence.</p></article>',
+        { headers: { 'content-type': 'text/html' } },
       )
+    }
+    let consolidationCalls = 0
     let gateCalls = 0
     const aiClient: AiClient = {
       async complete(request) {
         const user = JSON.parse(request.user) as {
-          candidate?: { canonicalUrl?: string }
+          story?: { reports?: { canonicalUrl: string }[] }
+          gate?: { sourceUrls?: string[] }
           languages?: string[]
-          recentPublications?: { title: string }[]
+          reports?: unknown[]
           task?: string
         }
-        if (user.task) {
-          gateCalls += 1
-          const duplicate = (user.recentPublications?.length ?? 0) > 0
-          if (duplicate) expect(user.recentPublications?.[0]?.title).toBe('Protocol launches upgrade')
+        if (user.reports) {
+          consolidationCalls += 1
           return {
             choices: [
               {
                 message: {
                   content: JSON.stringify({
-                    publish: !duplicate,
-                    score: duplicate ? 0.2 : 0.9,
-                    reason: duplicate ? 'duplicate event' : 'material update',
+                    groups: [{ reportIndexes: [0, 1], reason: 'The same network upgrade event' }],
+                  }),
+                },
+              },
+            ],
+          }
+        }
+        if (user.task) {
+          gateCalls += 1
+          const sourceUrls = user.story?.reports?.map((report) => report.canonicalUrl) ?? []
+          expect(sourceUrls).toHaveLength(2)
+          return {
+            choices: [
+              {
+                message: {
+                  content: JSON.stringify({
+                    publish: true,
+                    score: 0.9,
+                    reason: 'Two reports support the same material update',
                     topics: ['protocol'],
                     risks: [],
+                    verifiedFacts: ['The network upgrade is live.'],
+                    uncertainties: [],
+                    sourceUrls,
                   }),
                 },
               },
@@ -349,7 +471,7 @@ describe('pipeline idempotence', () => {
                     title: 'Protocol upgrade launches',
                     summary: 'A material network upgrade is now live.',
                     body: 'The source reports that the network upgrade is live.',
-                    sourceUrls: [user.candidate?.canonicalUrl],
+                    sourceUrls: user.gate?.sourceUrls,
                   })),
                 }),
               },
@@ -364,10 +486,12 @@ describe('pipeline idempotence', () => {
       now: new Date('2026-08-05T12:00:00.000Z'),
     })
 
-    expect(result.gateEvaluated).toBe(2)
-    expect(result.rejected).toBe(1)
+    expect(result.storyGroups).toBe(1)
+    expect(result.reportsMerged).toBe(1)
+    expect(result.gateEvaluated).toBe(1)
     expect(result.published).toBe(1)
-    expect(gateCalls).toBe(2)
+    expect(consolidationCalls).toBe(1)
+    expect(gateCalls).toBe(1)
   })
 
   it('blocks reserved fixture sources before AI evaluation', async () => {
@@ -398,8 +522,13 @@ describe('pipeline idempotence', () => {
       }),
       { rootDir: root },
     )
-    const fetchFn: FetchLike = async () =>
-      new Response(
+    const fetchFn: FetchLike = async (input) => {
+      if (!String(input).endsWith('/multiple.xml'))
+        return new Response(
+          '<article><h1>Recent report</h1><p>A complete article page with enough verified evidence for publication.</p></article>',
+          { headers: { 'content-type': 'text/html' } },
+        )
+      return new Response(
         `<?xml version="1.0"?><rss version="2.0"><channel>
       <item><guid>old</guid><title>Old signal</title><link>https://example.test/old</link><pubDate>Tue, 04 Aug 2026 00:00:00 GMT</pubDate><description>Old signal with enough context for publication.</description></item>
       <item><guid>recent-1</guid><title>Recent one</title><link>https://example.test/recent-1</link><pubDate>Wed, 05 Aug 2026 11:00:00 GMT</pubDate><description>Recent signal one with enough context for publication.</description></item>
@@ -408,6 +537,7 @@ describe('pipeline idempotence', () => {
     </channel></rss>`,
         { headers: { 'content-type': 'application/rss+xml' } },
       )
+    }
     const calls = { count: 0 }
     const first = await runPipeline(
       config,
@@ -425,14 +555,14 @@ describe('pipeline idempotence', () => {
     expect(first.collected).toBe(4)
     expect(first.skipped).toBe(1)
     expect(first.published).toBe(2)
-    expect(calls.count).toBe(4)
+    expect(calls.count).toBe(5)
     const second = await runPipeline(config, testPorts(config, { fetchFn, aiClient: fakeAi(calls) }), {
       allowTestSources: true,
       now: new Date('2026-08-05T12:15:00Z'),
     })
     expect(second.published).toBe(0)
     expect(second.skipped).toBe(0)
-    expect(calls.count).toBe(4)
+    expect(calls.count).toBe(5)
   })
 
   it('uses an independent checkpoint when a source is added', async () => {
@@ -451,7 +581,13 @@ describe('pipeline idempotence', () => {
       pendingDeliveries: [],
     })
     const fetchFn: FetchLike = async (input) => {
-      const id = String(input) === oldSource ? 'old' : 'new'
+      const url = String(input)
+      if (url !== oldSource && url !== newSource)
+        return new Response(
+          '<article><h1>New signal</h1><p>A complete article page with enough verified evidence for publication.</p></article>',
+          { headers: { 'content-type': 'text/html' } },
+        )
+      const id = url === oldSource ? 'old' : 'new'
       return new Response(
         `<?xml version="1.0"?><rss version="2.0"><channel><item><guid>${id}</guid><title>${id} signal</title><link>https://example.test/${id}</link><pubDate>Wed, 05 Aug 2026 11:00:00 GMT</pubDate><description>${id} signal with enough context for publication.</description></item></channel></rss>`,
         { headers: { 'content-type': 'application/rss+xml' } },
@@ -487,7 +623,13 @@ describe('pipeline idempotence', () => {
       pendingDeliveries: [],
     })
     const fetchFn: FetchLike = async (input) => {
-      if (String(input) === failedSource) throw new Error('source unavailable')
+      const url = String(input)
+      if (url === failedSource) throw new Error('source unavailable')
+      if (url !== goodSource)
+        return new Response(
+          '<article><h1>Good signal</h1><p>A complete article page with enough verified evidence for publication.</p></article>',
+          { headers: { 'content-type': 'text/html' } },
+        )
       return new Response(
         '<?xml version="1.0"?><rss version="2.0"><channel><item><guid>good</guid><title>Good signal</title><link>https://example.test/good</link><pubDate>Wed, 05 Aug 2026 11:00:00 GMT</pubDate><description>Good signal with enough context for publication.</description></item></channel></rss>',
         { headers: { 'content-type': 'application/rss+xml' } },
@@ -510,7 +652,15 @@ describe('pipeline idempotence', () => {
     const goodSource = 'https://example.test/gate-good.xml'
     const config = loadConfig(configEnv({ SOURCE_URLS: `${failedSource}\n${goodSource}` }), { rootDir: root })
     const fetchFn: FetchLike = async (input) => {
-      const id = String(input) === failedSource ? 'gate-failed' : 'gate-good'
+      const url = String(input)
+      if (url !== failedSource && url !== goodSource) {
+        const id = url.endsWith('/gate-failed') ? 'gate-failed' : 'gate-good'
+        return new Response(
+          `<article><h1>${id}</h1><p>${id} has a complete article page with enough verified evidence for publication.</p></article>`,
+          { headers: { 'content-type': 'text/html' } },
+        )
+      }
+      const id = url === failedSource ? 'gate-failed' : 'gate-good'
       return new Response(
         `<?xml version="1.0"?><rss version="2.0"><channel><item><guid>${id}</guid><title>${id}</title><link>https://example.test/${id}</link><pubDate>Wed, 05 Aug 2026 11:00:00 GMT</pubDate><description>${id} signal with enough context for publication.</description></item></channel></rss>`,
         { headers: { 'content-type': 'application/rss+xml' } },
@@ -519,6 +669,19 @@ describe('pipeline idempotence', () => {
     const successfulAi = fakeAi({ count: 0 })
     const aiClient: AiClient = {
       async complete(request) {
+        const user = JSON.parse(request.user) as { reports?: unknown[] }
+        if (user.reports)
+          return {
+            choices: [
+              {
+                message: {
+                  content: JSON.stringify({
+                    groups: user.reports.map((_, index) => ({ reportIndexes: [index], reason: 'Distinct event' })),
+                  }),
+                },
+              },
+            ],
+          }
         if (request.user.includes('gate-failed')) throw new DOMException('The operation timed out.', 'TimeoutError')
         return successfulAi.complete(request)
       },

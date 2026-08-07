@@ -1,5 +1,5 @@
 import type { AppConfig } from '../config/model'
-import type { Article, Candidate, PublicationReference } from '../domain/content'
+import { type Article, type Candidate, candidateReports, type PublicationReference } from '../domain/content'
 import {
   type DecisionRecord,
   type DecisionState,
@@ -17,6 +17,10 @@ export type RunSummary = {
   tooOld: number
   beforeCheckpoint: number
   selected: number
+  evidenceFetched: number
+  evidenceErrors: number
+  storyGroups: number
+  reportsMerged: number
   skipped: number
   alreadyDecided: number
   filtered: number
@@ -82,6 +86,7 @@ function configurationHash(config: AppConfig): string {
       languages: config.editorial.languages,
       instructions: config.editorial.instructions,
       prompts: { gate: config.editorial.gatePrompt, article: config.editorial.articlePrompt },
+      evidenceContract: 1,
     }),
   )
 }
@@ -126,6 +131,10 @@ function bootstrapSummary(targetCommitSha?: string): RunSummary {
     tooOld: 0,
     beforeCheckpoint: 0,
     selected: 0,
+    evidenceFetched: 0,
+    evidenceErrors: 0,
+    storyGroups: 0,
+    reportsMerged: 0,
     skipped: 0,
     alreadyDecided: 0,
     filtered: 0,
@@ -159,8 +168,12 @@ async function processCandidate(candidate: Candidate, context: RunContext): Prom
   seenKeys.add(decisionKey)
 
   let filterReason: string | undefined
-  if (!context.allowTestSources && isReservedTestSource(candidate)) filterReason = 'reserved-test-source'
-  else if (candidate.content.trim().length < config.sources.minimumContentLength) filterReason = 'content-too-short'
+  const reports = candidateReports(candidate)
+  const evidenceReports = reports.filter((report) => report.contentOrigin === 'article-page')
+  if (!context.allowTestSources && reports.some(isReservedTestSource)) filterReason = 'reserved-test-source'
+  else if (evidenceReports.length === 0) filterReason = 'evidence-unavailable'
+  else if (evidenceReports.every((report) => report.content.trim().length < config.sources.minimumContentLength))
+    filterReason = 'content-too-short'
   if (filterReason) {
     counters.filtered += 1
     state.decisions[decisionKey] = decisionRecord(decisionKey, 'rejected', configHash, updatedAt, {
@@ -203,7 +216,7 @@ async function processCandidate(candidate: Candidate, context: RunContext): Prom
     }))
   } catch (error) {
     counters.failed += 1
-    failedSources.add(candidate.sourceId)
+    for (const report of reports) failedSources.add(report.sourceId)
     state.decisions[decisionKey] = decisionRecord(decisionKey, 'failed', configHash, updatedAt, {
       reason: error instanceof Error ? error.message : String(error),
     })
@@ -321,8 +334,11 @@ export async function runPipeline(
     allowTestSources: options.allowTestSources ?? false,
   }
   const previousDelivery = await deliverPending(context)
+  const evidence = await ports.sources.collectEvidence(selection.candidates)
+  for (const error of evidence.errors) context.failedSources.add(error.sourceId)
+  const stories = await ports.editorial.consolidate(evidence.candidates)
   const articles: Article[] = []
-  for (const candidate of selection.candidates) {
+  for (const candidate of stories) {
     articles.push(...(await processCandidate(candidate, context)))
   }
 
@@ -348,6 +364,10 @@ export async function runPipeline(
     tooOld: selection.tooOld,
     beforeCheckpoint: selection.beforeCheckpoint,
     selected: selection.candidates.length,
+    evidenceFetched: evidence.fetched,
+    evidenceErrors: evidence.errors.length,
+    storyGroups: stories.length,
+    reportsMerged: evidence.candidates.length - stories.length,
     skipped: selection.skipped,
     ...context.counters,
     published: commit ? articles.length : 0,

@@ -26,6 +26,7 @@ export type CandidateFields = {
   readonly title?: unknown
   readonly content?: unknown
   readonly publishedAt?: unknown
+  readonly contentOrigin?: Candidate['contentOrigin']
 }
 
 export function candidateFrom(sourceId: string, fields: CandidateFields, baseUrl: string): Candidate | undefined {
@@ -46,5 +47,6 @@ export function candidateFrom(sourceId: string, fields: CandidateFields, baseUrl
     title,
     content: stringValue(fields.content) || title,
     publishedAt: stringValue(fields.publishedAt),
+    contentOrigin: fields.contentOrigin ?? 'source-summary',
   }
 }

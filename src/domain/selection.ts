@@ -1,4 +1,4 @@
-import type { Candidate } from './content'
+import { type Candidate, candidateReports } from './content'
 import { hashValue } from './decisions'
 
 export type SelectionPolicy = {
@@ -15,7 +15,16 @@ export type SelectionResult = {
 }
 
 function normalizedContent(candidate: Candidate): string {
-  return `${candidate.title}\n${candidate.content}`.replace(/\s+/g, ' ').trim().toLowerCase()
+  return candidateReports(candidate)
+    .map(
+      (report) =>
+        `${report.sourceId}\n${report.externalId}\n${report.canonicalUrl}\n${report.title}\n${report.content}`,
+    )
+    .sort()
+    .join('\n---\n')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .toLowerCase()
 }
 
 export function candidateContentHash(candidate: Candidate): string {

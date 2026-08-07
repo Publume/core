@@ -18,6 +18,7 @@ export async function parseFeed(sourceId: string, document: string, sourceUrl: s
           title: item.title,
           content: item.contentSnippet || item.content || item.summary,
           publishedAt: item.isoDate || item.pubDate,
+          contentOrigin: 'source-summary',
         },
         sourceUrl,
       ) ?? []
@@ -62,6 +63,7 @@ export function parseJson(sourceId: string, document: unknown, sourceUrl: string
             firstField(item, ['content', 'body', 'description', 'summary', 'text']) ||
             firstField(item, ['title', 'headline', 'name']),
           publishedAt: firstField(item, ['publishedAt', 'published_at', 'datePublished', 'created_at', 'date']),
+          contentOrigin: 'source-summary',
         },
         sourceUrl,
       ) ?? []
@@ -87,6 +89,7 @@ function parseJsonLd(sourceId: string, document: string, sourceUrl: string): Can
             title: record.headline || record.name,
             content: record.articleBody || record.description,
             publishedAt: record.datePublished,
+            contentOrigin: 'article-page',
           },
           sourceUrl,
         )
@@ -117,13 +120,22 @@ export function parseHtml(sourceId: string, document: string, sourceUrl: string)
     const title =
       article.find('h1,h2,h3,[itemprop="headline"]').first().text().trim() || $('title').text().trim() || link
     const content = article.find('[itemprop="articleBody"],p').text().trim() || article.text().trim()
-    const candidate = candidateFrom(sourceId, { externalId: link || index, url: link, title, content }, sourceUrl)
+    const contentOrigin = canonicalUrl(link, sourceUrl) === canonicalUrl(sourceUrl) ? 'article-page' : 'source-summary'
+    const candidate = candidateFrom(
+      sourceId,
+      { externalId: link || index, url: link, title, content, contentOrigin },
+      sourceUrl,
+    )
     if (candidate) candidates.push(candidate)
   })
   if (candidates.length > 0) return candidates
 
   const title = $('meta[property="og:title"]').attr('content') || $('title').text().trim() || sourceUrl
   const content = $('main').text().trim() || $('body').text().trim()
-  const fallback = candidateFrom(sourceId, { externalId: sourceUrl, url: sourceUrl, title, content }, sourceUrl)
+  const fallback = candidateFrom(
+    sourceId,
+    { externalId: sourceUrl, url: sourceUrl, title, content, contentOrigin: 'article-page' },
+    sourceUrl,
+  )
   return fallback ? [fallback] : []
 }

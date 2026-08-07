@@ -1,6 +1,6 @@
 # Prompt evaluation
 
-Publume Core includes a live, repeatable evaluation for the publication gate and article-generation prompts. It calls the same `createEditorial` and OpenAI-compatible client used by the production pipeline; it does not collect sources, publish content, or access GitHub.
+Publume Core includes a live, repeatable evaluation for the publication gate and article-generation prompts. It calls the same `createEditorial` and OpenAI-compatible client used by the production pipeline; it does not collect sources, run report consolidation, publish content, or access GitHub.
 
 The dataset contains 30 synthetic but production-shaped cases:
 
@@ -38,18 +38,6 @@ bun run eval:prompt -- --variant=current-core
 
 The command exits non-zero when the production prompt misses a threshold. Baseline failures remain visible in the report but do not fail the command.
 
-## Verified snapshot
-
-On 2026-08-07, dataset `0f79a799db60` was evaluated with `deepseek-v4-flash`:
-
-| Variant | Gate classification | Risk tags | Critical false positives | Articles | Errors |
-| --- | ---: | ---: | ---: | ---: | ---: |
-| `legacy-core` | 87.5% | 84.6% | 0 | 100.0% | 0 |
-| `reference-baseline` | 87.5% | 92.3% | 0 | 100.0% | 0 |
-| `current-core` | 91.7% | 92.3% | 0 | 100.0% | 0 |
-
-`current-core` passed every required threshold. Its two conservative gate disagreements rejected a sparse peer-reviewed study summary and a 47-minute outage postmortem that did not state the affected scale. Neither disagreement was a critical false positive. The evaluation also exposed one earlier JSON container-shape failure; adding explicit English JSON shape examples to the invariant prompt contract removed that failure in the final comparison run.
-
 ## Evidence boundary
 
-This evaluation measures one model configuration against a fixed synthetic dataset. It is not a substitute for production monitoring, human editorial review, factual verification against fetched source pages, or evaluation across every supported provider and language. Model, dataset hash, timestamps, per-case outputs, failures, and request duration are stored in the optional JSON report so results can be compared without treating one run as universal proof.
+This evaluation measures one model configuration against a fixed synthetic dataset. It checks classification and the source-bounded gate/article output contracts, but it does not prove factual truth, exercise article-page retrieval or evaluate report grouping. It is not a substitute for production monitoring, human editorial review, or evaluation across every supported provider and language. Model, dataset hash, timestamps, per-case outputs, failures, and request duration are stored in the optional JSON report so results can be compared without treating one run as universal proof.

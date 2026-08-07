@@ -218,6 +218,114 @@ describe('configuration and source boundaries', () => {
     ])
   })
 
+  it('fetches full article evidence only after candidate selection while preserving source identity', async () => {
+    const requests: string[] = []
+    const reader = createSourceReader(
+      [{ id: 'news', url: 'https://news.example.org/feed.xml' }],
+      20_000,
+      async (input) => {
+        const url = String(input)
+        requests.push(url)
+        if (url.endsWith('/feed.xml'))
+          return response(
+            '<?xml version="1.0"?><rss version="2.0"><channel><item><guid>report-1</guid><title>Brief feed title</title><link>https://news.example.org/reports/1</link><description>Short feed summary.</description></item></channel></rss>',
+            'application/rss+xml',
+          )
+        return response(
+          '<html><head><script type="application/ld+json">{"@type":"NewsArticle","headline":"Full report title","articleBody":"The full report provides dates, figures, attribution, and enough evidence for comparison."}</script></head><body></body></html>',
+          'text/html',
+        )
+      },
+    )
+
+    const collection = await reader.collect()
+    expect(requests).toEqual(['https://news.example.org/feed.xml'])
+
+    const evidence = await reader.collectEvidence(collection.candidates)
+
+    expect(requests).toEqual(['https://news.example.org/feed.xml', 'https://news.example.org/reports/1'])
+    expect(evidence.errors).toEqual([])
+    expect(evidence.fetched).toBe(1)
+    expect(evidence.candidates[0]).toMatchObject({
+      sourceId: 'news',
+      externalId: 'report-1',
+      canonicalUrl: 'https://news.example.org/reports/1',
+      title: 'Full report title',
+      contentOrigin: 'article-page',
+    })
+    expect(evidence.candidates[0]?.content).toContain('dates, figures, attribution')
+  })
+
+  it('does not follow article redirects into private network addresses', async () => {
+    const requests: string[] = []
+    const reader = createSourceReader(
+      [{ id: 'news', url: 'https://news.example.org/feed.xml' }],
+      20_000,
+      async (input) => {
+        const url = String(input)
+        requests.push(url)
+        if (url.endsWith('/feed.xml'))
+          return response(
+            '<?xml version="1.0"?><rss version="2.0"><channel><item><guid>report-1</guid><title>Report</title><link>https://news.example.org/reports/1</link><description>Discovery summary.</description></item></channel></rss>',
+            'application/rss+xml',
+          )
+        return new Response(null, { status: 302, headers: { location: 'http://169.254.169.254/latest/meta-data' } })
+      },
+    )
+
+    const evidence = await reader.collectEvidence((await reader.collect()).candidates)
+
+    expect(requests).toEqual(['https://news.example.org/feed.xml', 'https://news.example.org/reports/1'])
+    expect(evidence.candidates[0]?.contentOrigin).toBe('source-summary')
+    expect(evidence.fetched).toBe(0)
+    expect(evidence.errors[0]?.error).toContain('public IP address')
+  })
+
+  it('does not fetch article hostnames that resolve to private network addresses', async () => {
+    const requests: string[] = []
+    const reader = createSourceReader(
+      [{ id: 'news', url: 'https://news.example.org/feed.xml' }],
+      20_000,
+      async (input) => {
+        const url = String(input)
+        requests.push(url)
+        return response(
+          '<?xml version="1.0"?><rss version="2.0"><channel><item><guid>report-1</guid><title>Report</title><link>https://private.example.org/reports/1</link><description>Discovery summary.</description></item></channel></rss>',
+          'application/rss+xml',
+        )
+      },
+      async () => ['93.184.216.34', '10.0.0.8'],
+    )
+
+    const evidence = await reader.collectEvidence((await reader.collect()).candidates)
+
+    expect(requests).toEqual(['https://news.example.org/feed.xml'])
+    expect(evidence.candidates[0]?.contentOrigin).toBe('source-summary')
+    expect(evidence.fetched).toBe(0)
+    expect(evidence.errors[0]?.error).toContain('public IP address')
+  })
+
+  it('stops reading article responses that exceed the evidence size limit', async () => {
+    const reader = createSourceReader(
+      [{ id: 'news', url: 'https://news.example.org/feed.xml' }],
+      20_000,
+      async (input) => {
+        if (String(input).endsWith('/feed.xml'))
+          return response(
+            '<?xml version="1.0"?><rss version="2.0"><channel><item><guid>report-1</guid><title>Report</title><link>https://news.example.org/reports/1</link><description>Discovery summary.</description></item></channel></rss>',
+            'application/rss+xml',
+          )
+        return response(`<article>${'x'.repeat(2_100_000)}</article>`, 'text/html')
+      },
+    )
+
+    const evidence = await reader.collectEvidence((await reader.collect()).candidates)
+
+    expect(evidence.candidates[0]?.contentOrigin).toBe('source-summary')
+    expect(evidence.fetched).toBe(0)
+    expect(evidence.errors[0]?.error).toContain('response exceeded')
+  })
+
   it('keeps URL and decision hashes deterministic', () => {
     expect(canonicalUrl('https://example.test/a?utm_source=x&keep=1#part')).toBe('https://example.test/a?keep=1')
     expect(hashValue('same')).toBe(hashValue('same'))

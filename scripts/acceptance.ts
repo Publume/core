@@ -1,3 +1,4 @@
+import { existsSync } from 'node:fs'
 import { cp, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
@@ -68,6 +69,8 @@ function createPorts(config: AppConfig, fetchFn: FetchLike, aiClient: AiClient):
 }
 
 const root = await mkdtemp(path.join(tmpdir(), 'publume-acceptance-'))
+const outputArgument = process.argv.find((argument) => argument.startsWith('--output='))
+const outputDirectory = outputArgument ? path.resolve(outputArgument.slice('--output='.length)) : undefined
 const previousDeliveryConfig = process.env.DELIVERY_CONFIG
 process.env.PUBLUME_ACCEPTANCE_SECRET = 'must-not-reach-theme-build'
 process.env.DELIVERY_CONFIG = 'must-not-reach-theme-build'
@@ -104,6 +107,16 @@ try {
         }),
         { headers: { 'content-type': 'application/json' } },
       )
+    if (url.endsWith('/rss-1'))
+      return new Response(
+        '<article><h1>Shared release reaches production</h1><p>The production release introduces the same material capability described by the JSON report, with complete article evidence.</p></article>',
+        { headers: { 'content-type': 'text/html' } },
+      )
+    if (url.endsWith('/json-1'))
+      return new Response(
+        '<article><h1>Shared release reaches production</h1><p>An independent report confirms the production release and adds source-bounded implementation details.</p></article>',
+        { headers: { 'content-type': 'text/html' } },
+      )
     if (url.endsWith('/page.html'))
       return new Response(
         '<article><h1>HTML signal</h1><p>A reliable HTML signal with enough context for an important publication.</p></article>',
@@ -113,14 +126,32 @@ try {
   }
 
   const calls = { count: 0 }
+  const aiCallCount = (): number => calls.count
   const aiClient: AiClient = {
     async complete(request) {
       calls.count += 1
       const user = JSON.parse(request.user) as {
-        candidate?: { canonicalUrl?: string }
+        story?: { reports?: { canonicalUrl: string; content: string }[] }
+        gate?: { sourceUrls?: string[] }
         languages?: string[]
+        reports?: unknown[]
         task?: string
       }
+      if (user.reports)
+        return {
+          choices: [
+            {
+              message: {
+                content: JSON.stringify({
+                  groups: [
+                    { reportIndexes: [0, 1], reason: 'Two reports describe the same production release' },
+                    { reportIndexes: [2], reason: 'A distinct HTML report' },
+                  ],
+                }),
+              },
+            },
+          ],
+        }
       if (user.task)
         return {
           choices: [
@@ -132,6 +163,11 @@ try {
                   reason: 'important and sourced',
                   topics: ['technology'],
                   risks: [],
+                  verifiedFacts: user.story?.reports?.map((report) => report.content) ?? [
+                    'Source-backed fixture fact.',
+                  ],
+                  uncertainties: [],
+                  sourceUrls: user.story?.reports?.map((report) => report.canonicalUrl) ?? [],
                 }),
               },
             },
@@ -147,7 +183,7 @@ try {
                   title: `Validated ${language}`,
                   summary: 'Validated summary',
                   body: 'Validated body with source-backed facts.',
-                  sourceUrls: [user.candidate?.canonicalUrl],
+                  sourceUrls: user.gate?.sourceUrls ?? [],
                 })),
               }),
             },
@@ -184,8 +220,18 @@ try {
     mode: 'initial',
     allowTestSources: true,
   })
-  if (first.published !== 6 || first.sourceErrors !== 1 || calls.count !== 6)
-    throw new Error(`first run did not publish 6 language files: ${JSON.stringify({ first, calls: calls.count })}`)
+  if (
+    first.published !== 4 ||
+    first.sourceErrors !== 1 ||
+    first.evidenceFetched !== 2 ||
+    first.evidenceErrors !== 0 ||
+    first.storyGroups !== 2 ||
+    first.reportsMerged !== 1 ||
+    aiCallCount() !== 5
+  )
+    throw new Error(
+      `first run did not fetch evidence, merge reports, and publish 4 language files: ${JSON.stringify({ first, calls: calls.count })}`,
+    )
 
   const stateAfterFirst = JSON.parse(await readFile(config.state.path, 'utf8')) as {
     decisions: Record<string, { status: string }>
@@ -197,14 +243,19 @@ try {
   const second = await runPipeline(secondConfig, createPorts(secondConfig, fetchFixture, aiClient), {
     allowTestSources: true,
   })
-  if (second.published !== 0 || calls.count !== 6)
+  if (second.published !== 0 || aiCallCount() !== 6)
     throw new Error(`second run was not idempotent: ${JSON.stringify({ second, calls: calls.count })}`)
 
   const checkout = path.join(root, 'checkout')
   await command(['git', 'clone', '--branch', config.target.branch, targetRepository, checkout], root)
   const files = (await command(['git', 'ls-tree', '-r', '--name-only', 'HEAD'], checkout)).split('\n')
   const articleCount = files.filter((file) => file.startsWith('src/content/articles/') && file.endsWith('.md')).length
-  if (articleCount !== 6) throw new Error(`expected 6 article files, found ${articleCount}`)
+  if (articleCount !== 4) throw new Error(`expected 4 article files, found ${articleCount}`)
+  const generatedArticles = files.filter((file) => file.startsWith('src/content/articles/') && file.endsWith('.md'))
+  const mergedArticle = await Promise.all(
+    generatedArticles.map((file) => readFile(path.join(checkout, file), 'utf8')),
+  ).then((articles) => articles.find((article) => article.includes('/rss-1') && article.includes('/json-1')))
+  if (!mergedArticle) throw new Error('published output did not preserve the merged story source set')
   for (const requiredFile of [
     '.github/workflows/pages.yml',
     '.publume-site.json',
@@ -260,6 +311,13 @@ try {
       if (!articleHtml.includes(localizedText))
         throw new Error(`real theme article is missing localized text: ${localizedText}`)
     }
+    if (outputDirectory) {
+      if (existsSync(outputDirectory)) throw new Error(`acceptance output already exists: ${outputDirectory}`)
+      await cp(checkout, outputDirectory, {
+        recursive: true,
+        filter: (entry) => !['.git', 'node_modules'].includes(path.basename(entry)),
+      })
+    }
   }
 
   await command(['git', 'config', 'user.name', 'fixture'], checkout)
@@ -308,7 +366,14 @@ try {
   if (!unknownRepositoryError.includes('non-empty')) throw new Error('non-empty unknown target was not rejected')
 
   console.log(
-    JSON.stringify({ first, second, aiCalls: calls.count, articleFiles: articleCount, theme: alternateThemeId }),
+    JSON.stringify({
+      first,
+      second,
+      aiCalls: calls.count,
+      articleFiles: articleCount,
+      theme: alternateThemeId,
+      ...(outputDirectory ? { outputDirectory } : {}),
+    }),
   )
 } finally {
   delete process.env.PUBLUME_ACCEPTANCE_SECRET

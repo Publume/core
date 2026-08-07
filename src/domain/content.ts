@@ -1,10 +1,15 @@
-export type Candidate = {
+export type SourceReport = {
   readonly sourceId: string
   readonly externalId: string
   readonly canonicalUrl: string
   readonly title: string
   readonly content: string
   readonly publishedAt?: string
+  readonly contentOrigin: 'source-summary' | 'article-page'
+}
+
+export type Candidate = SourceReport & {
+  readonly reports?: readonly SourceReport[]
 }
 
 export type GateDecision = {
@@ -13,6 +18,9 @@ export type GateDecision = {
   readonly reason: string
   readonly topics: readonly string[]
   readonly risks: readonly string[]
+  readonly verifiedFacts: readonly string[]
+  readonly uncertainties: readonly string[]
+  readonly sourceUrls: readonly string[]
 }
 
 export type PublicationReference = {
@@ -41,4 +49,14 @@ export type Article = GeneratedArticle & {
 export type CollectionResult = {
   readonly candidates: readonly Candidate[]
   readonly errors: readonly { sourceId: string; error: string }[]
+}
+
+export type EvidenceCollectionResult = {
+  readonly candidates: readonly Candidate[]
+  readonly errors: readonly { sourceId: string; url: string; error: string }[]
+  readonly fetched: number
+}
+
+export function candidateReports(candidate: Candidate): readonly SourceReport[] {
+  return candidate.reports?.length ? candidate.reports : [candidate]
 }

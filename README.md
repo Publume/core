@@ -4,10 +4,10 @@
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 
 Publume Core is a configuration-first personal information and publishing
-engine. It collects recent source material, applies deterministic filters and an
-AI publication gate, generates source-linked summaries, commits validated
-content to a separate site repository, and can deliver it through optional
-notification channels.
+engine. It collects recent source material and linked article evidence, merges
+reports about the same event, extracts source-bounded facts and uncertainty,
+generates validated articles, commits them to a separate site repository, and
+can deliver them through optional notification channels.
 
 The project is designed for scheduled GitHub Actions runs. It has no database,
 long-running server, or bundled site theme.
@@ -24,10 +24,13 @@ RSS / Atom / JSON / HTML
 normalize -> deduplicate -> recency and hard filters
             |
             v
-        AI publication gate
+ fetch selected article pages -> merge same-event reports
             |
             v
-   multilingual generation -> runtime validation
+ evidence gate -> verified facts + uncertainty + source set
+            |
+            v
+   multilingual generation -> source/runtime validation
             |
             v
        target site repository -> site deployment workflow
@@ -39,6 +42,12 @@ normalize -> deduplicate -> recency and hard filters
 A scheduled run can succeed without publishing anything. Candidates that are
 duplicate, stale, unsupported, low-value, unsafe, or below the configured score
 threshold are rejected before they reach the target repository.
+
+“Evidence verification” has a strict boundary: Core asks the publication gate to
+extract supported facts, conflicts, and missing details from fetched reports. It
+then gives generation only that approved context and deterministically enforces
+the exact source set. Factual adherence still depends on the configured model and
+evaluation; Core does not independently prove a claim or replace human review.
 
 ## Requirements
 
@@ -174,6 +183,15 @@ To run the same acceptance flow against a local Publume Themes checkout:
 
 ```bash
 PUBLUME_THEME_DIRECTORY=../themes bun run acceptance
+```
+
+To keep the generated, built Website for browser inspection, pass a new output
+directory and start its Astro preview:
+
+```bash
+PUBLUME_THEME_DIRECTORY=../themes bun run acceptance -- --output=/tmp/publume-site-preview
+bun install --frozen-lockfile --cwd /tmp/publume-site-preview
+bun run --cwd /tmp/publume-site-preview preview
 ```
 
 To run the actual GitHub workflow locally, install Docker and

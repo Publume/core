@@ -29,6 +29,9 @@ describe('prompt evaluation', () => {
       reason: 'This is a fixture, not publishable information.',
       topics: [],
       risks: ['unsafe'],
+      verifiedFacts: [],
+      uncertainties: ['This is a test fixture.'],
+      sourceUrls: [],
     })
     expect(rejection).toMatchObject({ classificationPassed: true, criticalFalsePositive: false })
 
@@ -38,6 +41,9 @@ describe('prompt evaluation', () => {
       reason: 'Looks important.',
       topics: ['testing'],
       risks: [],
+      verifiedFacts: ['The fixture claims a test succeeded.'],
+      uncertainties: [],
+      sourceUrls: [fixture.candidate.canonicalUrl],
     })
     expect(falsePositive).toMatchObject({ classificationPassed: false, criticalFalsePositive: true })
   })
