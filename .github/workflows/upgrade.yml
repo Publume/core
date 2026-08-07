@@ -43,9 +43,9 @@ jobs:
         env:
           STATE_PATH: ${{ vars.STATE_PATH }}
         run: |
-          state_path="$(bun scripts/resolve-state-path.ts)"
+          state_path="$(bun .publume-upstream/scripts/resolve-state-path.ts)"
           core_sha="$(git -C .publume-upstream rev-parse HEAD)"
-          cp scripts/push-current-branch.sh "$RUNNER_TEMP/publume-push-current-branch.sh"
+          cp .publume-upstream/scripts/push-current-branch.sh "$RUNNER_TEMP/publume-push-current-branch.sh"
           rsync -a --delete \
             --exclude '.git/' \
             --exclude '.publume-upstream/' \
@@ -62,7 +62,7 @@ jobs:
         env:
           CORE_REF: ${{ inputs.core_ref }}
           CORE_SHA: ${{ steps.synchronize.outputs.core_sha }}
-          GITHUB_TOKEN: ${{ github.token }}
+          GITHUB_TOKEN: ${{ secrets.TARGET_REPO_TOKEN || github.token }}
         run: |
           git config user.name 'publume[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'

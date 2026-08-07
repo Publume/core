@@ -149,8 +149,12 @@ describe('GitHub workflow state boundary', () => {
     expect(upgrade).toContain('--exclude "/$state_path"')
     expect(upgrade.indexOf('bun run check')).toBeLessThan(upgrade.indexOf('- name: Commit the upgrade'))
     expect(upgrade).toContain(`Upstream-Commit: \${CORE_SHA}`)
+    expect(upgrade).toContain('bun .publume-upstream/scripts/resolve-state-path.ts')
+    expect(upgrade).toContain(
+      'cp .publume-upstream/scripts/push-current-branch.sh "$RUNNER_TEMP/publume-push-current-branch.sh"',
+    )
+    expect(upgrade).toContain(`GITHUB_TOKEN: \${{ secrets.TARGET_REPO_TOKEN || github.token }}`)
     expect(generate).toContain('bash scripts/push-current-branch.sh')
-    expect(upgrade).toContain('cp scripts/push-current-branch.sh "$RUNNER_TEMP/publume-push-current-branch.sh"')
     expect(upgrade).toContain('bash "$RUNNER_TEMP/publume-push-current-branch.sh"')
   })
 })
