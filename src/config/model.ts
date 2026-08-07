@@ -98,15 +98,6 @@ export type SiteConfig = {
   readonly socialImageUrl: string
   readonly newsletterUrl: string
   readonly sponsorUrl: string
-  readonly theme: string
-  readonly primaryColor: string
-  readonly accentColor: string
-  readonly backgroundColor: string
-  readonly surfaceColor: string
-  readonly textColor: string
-  readonly mutedColor: string
-  readonly maxWidth: string
-  readonly cardRadius: string
   readonly showTopics: boolean
   readonly showScore: boolean
   readonly showSources: boolean

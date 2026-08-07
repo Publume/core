@@ -151,8 +151,6 @@ function loadSources(read: EnvReader): Source[] {
 
 function loadSite(read: EnvReader, outputLanguages: readonly string[], defaultContentLanguage: string): SiteConfig {
   const name = read.optional('SITE_NAME')
-  // Existing version-1 Websites still parse these fields; current Themes own and ignore them.
-  const color = /^#[0-9a-fA-F]{6}$/
   return {
     url: read.url('SITE_URL', ['https:', 'http:']),
     name,
@@ -168,15 +166,6 @@ function loadSite(read: EnvReader, outputLanguages: readonly string[], defaultCo
     socialImageUrl: read.url('SITE_SOCIAL_IMAGE_URL', ['https:', 'http:']),
     newsletterUrl: read.url('SITE_NEWSLETTER_URL', ['https:', 'http:']),
     sponsorUrl: read.url('SITE_SPONSOR_URL', ['https:', 'http:']),
-    theme: read.token('SITE_THEME', 'default', /^[a-z0-9][a-z0-9_-]{0,63}$/),
-    primaryColor: read.token('SITE_PRIMARY_COLOR', '#2563eb', color),
-    accentColor: read.token('SITE_ACCENT_COLOR', '#0891b2', color),
-    backgroundColor: read.token('SITE_BACKGROUND_COLOR', '#ffffff', color),
-    surfaceColor: read.token('SITE_SURFACE_COLOR', '#f8fafc', color),
-    textColor: read.token('SITE_TEXT_COLOR', '#0f172a', color),
-    mutedColor: read.token('SITE_MUTED_COLOR', '#64748b', color),
-    maxWidth: read.token('SITE_MAX_WIDTH', '1180px', /^\d{3,4}px$/),
-    cardRadius: read.token('SITE_CARD_RADIUS', '16px', /^\d{1,3}px$/),
     showTopics: read.boolean('SITE_SHOW_TOPICS', true),
     showScore: read.boolean('SITE_SHOW_SCORE', false),
     showSources: read.boolean('SITE_SHOW_SOURCES', true),
