@@ -69,7 +69,8 @@ The shortest working path is:
 2. create a separate, empty public repository for the website;
 3. enable GitHub Actions as the website repository's Pages source;
 4. add the required Core repository variables and secrets;
-5. run **Generate and publish** once in `initial` mode.
+5. run **Generate and publish** once in `initial` mode and verify the Pages URL;
+6. deploy the Cloudflare Trigger Worker after the website is live.
 
 Follow the GitHub manual deployment guide in
 [English](docs/deployment.en.md) or [简体中文](docs/deployment.md) for the exact
@@ -137,9 +138,11 @@ For first-time setup, repository creation, and Pages configuration, follow the
 GitHub manual deployment guide in [English](docs/deployment.en.md) or
 [简体中文](docs/deployment.md).
 
-The optional Worker in [`scheduler/`](scheduler/) dispatches the workflow every
-two hours. `GITHUB_TOKEN` must be configured as a Cloudflare Worker secret, and
-`GITHUB_REPOSITORY` must be configured as a Worker environment variable.
+The Worker in [`scheduler/`](scheduler/) completes the scheduled deployment by
+dispatching the workflow every two hours. Deploy it only after the first website
+publication succeeds. `GITHUB_TOKEN` must be configured as a Cloudflare Worker
+secret, and `GITHUB_REPOSITORY` must be configured as a Worker environment
+variable.
 
 ## Themes and sites
 
