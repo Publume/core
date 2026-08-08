@@ -60,6 +60,7 @@ describe('configuration and source boundaries', () => {
     expect(config.editorial.profile.id).toBe('general')
     expect(config.editorial.deduplicationContextSize).toBe(50)
     expect(config.sources.entries).toHaveLength(1)
+    expect(config.sources.productHuntApiToken).toBe('')
     expect(config.sources.maxCandidatesPerRun).toBe(20)
     expect(config.state.maxRecords).toBe(1_000)
     expect(config.state.maxPendingDeliveries).toBe(500)
@@ -295,8 +296,7 @@ describe('configuration and source boundaries', () => {
           'text/html',
         )
       },
-      undefined,
-      'https://search.example.test/?q={query}&format=rss',
+      { enrichmentSearchUrlTemplate: 'https://search.example.test/?q={query}&format=rss' },
     )
 
     const result = await reader.collectEnrichment?.([original], 1)
@@ -500,7 +500,7 @@ describe('configuration and source boundaries', () => {
           )
         return response('<article><h1>Public report</h1><p>Complete public evidence.</p></article>', 'text/html')
       },
-      async () => ['93.184.216.34'],
+      { resolveHostname: async () => ['93.184.216.34'] },
     )
 
     const evidence = await reader.collectEvidence((await reader.collect()).candidates)
@@ -549,7 +549,7 @@ describe('configuration and source boundaries', () => {
           'application/rss+xml',
         )
       },
-      async () => ['93.184.216.34', '10.0.0.8'],
+      { resolveHostname: async () => ['93.184.216.34', '10.0.0.8'] },
     )
 
     const evidence = await reader.collectEvidence((await reader.collect()).candidates)

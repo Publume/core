@@ -10,9 +10,11 @@ import {
   candidateReports,
   type EvidenceCollectionResult,
 } from '../../domain/content'
+import { type FetchLike, fetchResponse } from './http'
 import { discoverFeedUrl, parseFeed, parseHtml, parseJson } from './parsers'
+import { collectProductHuntSource, isProductHuntFeed } from './product-hunt'
 
-export type FetchLike = (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>
+export type { FetchLike } from './http'
 
 type Document = { readonly text: string; readonly contentType: string }
 const sourceConcurrency = 4
@@ -21,13 +23,6 @@ const maximumEvidenceCharacters = 30_000
 const maximumReadableElements = 50_000
 const maximumArticleResponseBytes = 4_000_000
 const maximumArticleRedirects = 5
-const maximumFetchAttempts = 3
-const retryableHttpStatuses = new Set([403, 408, 425, 429, 500, 502, 503, 504])
-const requestHeaders = {
-  accept: 'application/atom+xml, application/rss+xml, application/xml;q=0.9, text/html;q=0.8, */*;q=0.5',
-  'accept-language': 'en-US,en;q=0.8',
-  'user-agent': 'Publume/0.1 (+https://github.com/Publume/core)',
-}
 const blockedIpv4ArticleAddresses = new BlockList()
 const blockedIpv6ArticleAddresses = new BlockList()
 
@@ -64,35 +59,6 @@ for (const [network, prefix] of [
   blockedIpv6ArticleAddresses.addSubnet(network, prefix, 'ipv6')
 
 type ResolveHostname = (hostname: string) => Promise<readonly string[]>
-
-function retryableFetchError(error: unknown): boolean {
-  return (
-    error instanceof TypeError || (error instanceof DOMException && ['AbortError', 'TimeoutError'].includes(error.name))
-  )
-}
-
-async function fetchResponse(
-  fetchFn: FetchLike,
-  url: string,
-  timeoutMs: number,
-  init: Omit<RequestInit, 'headers' | 'signal'> = {},
-): Promise<Response> {
-  for (let attempt = 1; attempt <= maximumFetchAttempts; attempt += 1) {
-    try {
-      const response = await fetchFn(url, {
-        ...init,
-        headers: requestHeaders,
-        signal: AbortSignal.timeout(timeoutMs),
-      })
-      if (!retryableHttpStatuses.has(response.status) || attempt === maximumFetchAttempts) return response
-      await response.body?.cancel()
-    } catch (error) {
-      if (!retryableFetchError(error) || attempt === maximumFetchAttempts) throw error
-    }
-    await new Promise((resolve) => setTimeout(resolve, 250 * 2 ** (attempt - 1)))
-  }
-  throw new Error('HTTP retry loop exhausted')
-}
 
 async function fetchDocument(fetchFn: FetchLike, url: string, timeoutMs: number): Promise<Document> {
   const response = await fetchResponse(fetchFn, url, timeoutMs)
@@ -371,9 +337,14 @@ export function createSourceReader(
   sources: readonly Source[],
   timeoutMs: number,
   fetchFn: FetchLike = fetch,
-  resolveHostname: ResolveHostname | undefined = fetchFn === fetch ? defaultResolveHostname : undefined,
-  enrichmentSearchUrlTemplate = '',
+  options: {
+    readonly resolveHostname?: ResolveHostname
+    readonly enrichmentSearchUrlTemplate?: string
+    readonly productHuntApiToken?: string
+  } = {},
 ): SourceReader {
+  const resolveHostname = options.resolveHostname ?? (fetchFn === fetch ? defaultResolveHostname : undefined)
+  const productHuntApiToken = options.productHuntApiToken
   return {
     async collect(): Promise<CollectionResult> {
       const candidatesBySource = sources.map((): Candidate[] => [])
@@ -385,8 +356,17 @@ export function createSourceReader(
           nextIndex += 1
           const source = sources[index]
           if (!source) continue
+          const productHuntFeed = isProductHuntFeed(source)
+          if (productHuntFeed && !productHuntApiToken) continue
           try {
-            candidatesBySource[index] = await collectSource(source, fetchFn, timeoutMs)
+            if (productHuntFeed && productHuntApiToken)
+              candidatesBySource[index] = await collectProductHuntSource(
+                source,
+                productHuntApiToken,
+                fetchFn,
+                timeoutMs,
+              )
+            else candidatesBySource[index] = await collectSource(source, fetchFn, timeoutMs)
           } catch (error) {
             errorsBySource[index] = {
               sourceId: source.id,
@@ -405,11 +385,11 @@ export function createSourceReader(
       return collectEvidence(candidates, fetchFn, timeoutMs, resolveHostname)
     },
     collectEnrichment(candidates, maximumResultsPerStory): Promise<EvidenceCollectionResult> {
-      if (!enrichmentSearchUrlTemplate) return Promise.resolve({ candidates, errors: [], fetched: 0 })
+      if (!options.enrichmentSearchUrlTemplate) return Promise.resolve({ candidates, errors: [], fetched: 0 })
       return collectEnrichment(
         candidates,
         maximumResultsPerStory,
-        enrichmentSearchUrlTemplate,
+        options.enrichmentSearchUrlTemplate,
         fetchFn,
         timeoutMs,
         resolveHostname,

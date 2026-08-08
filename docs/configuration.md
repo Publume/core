@@ -25,6 +25,7 @@ scheduled run skips Core once; otherwise it runs Core normally.
 | --- | --- |
 | `AI_API_KEY` | Authenticates the configured AI endpoint. |
 | `TARGET_REPO_TOKEN` | Writes to a GitHub target repository. Not required for local filesystem targets. |
+| `PRODUCTHUNT_API_TOKEN` | Optional Product Hunt developer token. Required to collect the configured Product Hunt Feed through its official API. |
 | `DELIVERY_CONFIG` | Optional JSON array containing notification endpoints and their credentials. |
 
 Use a fine-grained GitHub token with access only to the selected target
@@ -53,7 +54,8 @@ actual response model, attempt count, status, and available token usage in
 request; evidence and domain validation failures are never repaired into success.
 
 Source and article requests identify Publume explicitly and retry transient network failures and HTTP 403, 408, 425, 429,
-500, 502, 503, and 504 responses twice. Recoverable article-evidence failures appear in the run summary as
+500, 502, 503, and 504 responses twice. Product Hunt API requests do not retry HTTP 429; their error reports the API quota
+reset time when available. Recoverable article-evidence failures appear in the run summary as
 `evidenceFailures`; they make the run `partial` but do not prevent initial site creation.
 
 ## Content mission
@@ -77,6 +79,11 @@ Source and article requests identify Publume explicitly and retry transient netw
 | `MAX_CANDIDATES_PER_RUN` | no | `20` | Candidate budget after bounded AI admission and source/category balancing. Deferred candidates remain eligible for later runs. |
 | `MINIMUM_CONTENT_LENGTH` | no | `80` | Minimum normalized candidate content length. |
 | `SOURCE_TIMEOUT_SECONDS` | no | `20` | Per-source timeout from 1 to 300 seconds. |
+
+`https://www.producthunt.com/feed` has a dedicated boundary. When `PRODUCTHUNT_API_TOKEN` is present, Core reads up to 50
+recent posts from Product Hunt's official GraphQL API and treats their descriptions as primary evidence; it never requests
+`/products/*` pages. Without the token, Core skips that Product Hunt source without making a Product Hunt request or recording
+a source error. Other configured sources continue normally. Store the token as a repository secret, never a variable.
 
 Profiles and prompts are part of the decision identity. Changing the model, languages,
 threshold, deduplication context size, audience instructions, or prompts allows

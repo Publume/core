@@ -35,6 +35,9 @@ cli
   validated configuration, and those ports.
 - `adapters/` implements the ports for OpenAI-compatible APIs, web sources, a JSON
   state file, Git, and a target site repository.
+- `adapters/sources/reader.ts` routes configured sources and owns generic Feed
+  collection; provider-specific authentication, protocols, validation, and error
+  mapping live in dedicated modules such as `adapters/sources/product-hunt.ts`.
 - `config/` owns the environment contract and produces a grouped, immutable
   runtime configuration.
 - `cli.ts` is the composition root. It validates configuration, creates adapters,
@@ -43,9 +46,9 @@ cli
 The resulting runtime path is:
 
 1. validate environment configuration;
-2. resolve standard Feed URLs or configured `rsshub://` routes, then normalize RSS, Atom, JSON, or HTML indexes;
+2. resolve standard Feed URLs or configured `rsshub://` routes, use the authenticated official API for a configured Product Hunt Feed, then normalize source records;
 3. merge equal canonical URLs, apply recency/processed-state rules, run bounded discovery admission, and balance sources and categories;
-4. fetch linked article pages only for selected candidates, retaining the source summary when full text is unavailable;
+4. fetch linked article pages only for selected generic candidates; authenticated Product Hunt API records already provide their evidence and never trigger product-page requests;
 5. consolidate reports of the same actors, event, and time frame into exhaustive, non-overlapping story groups;
 6. when the fixed profile permits it and evidence is below its minimum, query one configured search Feed and fetch only the bounded results;
 7. extract claim-level evidence, material uncertainty, and exact source references through the publication gate;

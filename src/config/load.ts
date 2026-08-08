@@ -270,6 +270,7 @@ export function loadConfig(env: Environment = process.env, options: { rootDir?: 
     },
     sources: {
       entries: loadSources(read),
+      productHuntApiToken: read.optional('PRODUCTHUNT_API_TOKEN'),
       timeoutMs: read.number('SOURCE_TIMEOUT_SECONDS', 20, { min: 1, max: 300 }) * 1_000,
       maxItemAgeHours: read.number('MAX_ITEM_AGE_HOURS', 24, { min: 1, max: 24 * 365 }),
       maxCandidatesPerRun: read.number('MAX_CANDIDATES_PER_RUN', 20, { min: 1, max: 100 }),

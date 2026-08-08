@@ -11,13 +11,10 @@ import type { AppConfig } from './config/model'
 
 function createPorts(config: AppConfig): PipelinePorts {
   return {
-    sources: createSourceReader(
-      config.sources.entries,
-      config.sources.timeoutMs,
-      fetch,
-      undefined,
-      config.sources.enrichmentSearchUrlTemplate,
-    ),
+    sources: createSourceReader(config.sources.entries, config.sources.timeoutMs, fetch, {
+      enrichmentSearchUrlTemplate: config.sources.enrichmentSearchUrlTemplate,
+      productHuntApiToken: config.sources.productHuntApiToken,
+    }),
     editorial: createEditorial(config.editorial, createOpenAiClient(config.ai)),
     decisions: createFileDecisionStore(config.state.path),
     site: createSitePublisher(config),

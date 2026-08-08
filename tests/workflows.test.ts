@@ -151,6 +151,9 @@ describe('GitHub workflow state boundary', () => {
     expect(generate.indexOf(`AI_API_KEY: \${{ secrets.AI_API_KEY }}`)).toBeGreaterThan(
       generate.indexOf('- name: Run Publume Core'),
     )
+    expect(generate.indexOf(`PRODUCTHUNT_API_TOKEN: \${{ secrets.PRODUCTHUNT_API_TOKEN }}`)).toBeGreaterThan(
+      generate.indexOf('- name: Run Publume Core'),
+    )
     expect(generate).not.toContain('PUBLUME_LOCAL')
     expect(generate).not.toContain('SITE_ARTICLE_TITLE_MAX_SIZE')
     expect(generate).toContain('options: [run, initial, bootstrap]')

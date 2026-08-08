@@ -95,6 +95,7 @@ jobs:
         if: steps.schedule_gate.outputs.should_run != 'false'
         env:
           AI_API_KEY: ${{ secrets.AI_API_KEY }}
+          PRODUCTHUNT_API_TOKEN: ${{ secrets.PRODUCTHUNT_API_TOKEN }}
           TARGET_REPO_TOKEN: ${{ secrets.TARGET_REPO_TOKEN }}
           DELIVERY_CONFIG: ${{ secrets.DELIVERY_CONFIG }}
           PUBLUME_MODE: ${{ inputs.mode || 'run' }}

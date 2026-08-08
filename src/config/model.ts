@@ -28,6 +28,7 @@ export type EditorialConfig = {
 
 export type SourceConfig = {
   readonly entries: readonly Source[]
+  readonly productHuntApiToken: string
   readonly timeoutMs: number
   readonly maxItemAgeHours: number
   readonly maxCandidatesPerRun: number

@@ -174,13 +174,10 @@ type PortOptions = {
 
 function testPorts(config: AppConfig, options: PortOptions = {}): PipelinePorts {
   return {
-    sources: createSourceReader(
-      config.sources.entries,
-      config.sources.timeoutMs,
-      options.fetchFn ?? feedFixture,
-      undefined,
-      config.sources.enrichmentSearchUrlTemplate,
-    ),
+    sources: createSourceReader(config.sources.entries, config.sources.timeoutMs, options.fetchFn ?? feedFixture, {
+      enrichmentSearchUrlTemplate: config.sources.enrichmentSearchUrlTemplate,
+      productHuntApiToken: config.sources.productHuntApiToken,
+    }),
     editorial: createEditorial(config.editorial, options.aiClient ?? fakeAi({ count: 0 })),
     decisions: createFileDecisionStore(config.state.path),
     delivery: options.delivery ?? [],

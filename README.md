@@ -97,6 +97,8 @@ TARGET_REPOSITORY=owner/site-repository
 TARGET_REPO_TOKEN=your-fine-grained-token
 
 SOURCE_URLS="https://source.example/feed.xml"
+# Required only when SOURCE_URLS contains https://www.producthunt.com/feed
+PRODUCTHUNT_API_TOKEN=your-product-hunt-developer-token
 CONTENT_INSTRUCTIONS="Describe the audience, subject, and publication standard."
 SITE_TYPE=general
 ```
@@ -128,6 +130,7 @@ Store credentials as repository secrets:
 
 - `AI_API_KEY`
 - `TARGET_REPO_TOKEN`
+- `PRODUCTHUNT_API_TOKEN` when `SOURCE_URLS` contains the Product Hunt Feed
 - `DELIVERY_CONFIG` when notification channels are enabled
 
 For the first `initial` run, `TARGET_REPO_TOKEN` must be scoped to the target site

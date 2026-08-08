@@ -97,6 +97,7 @@ Add these values on the **Secrets** tab:
 | --- | --- |
 | `AI_API_KEY` | The API key for the AI service. |
 | `TARGET_REPO_TOKEN` | The fine-grained token created in step 3. |
+| `PRODUCTHUNT_API_TOKEN` | Add a Product Hunt developer token only when `SOURCE_URLS` contains `https://www.producthunt.com/feed`; otherwise omit it. |
 
 Add the first-run configuration on the **Variables** tab:
 
@@ -168,14 +169,21 @@ printf 'AI_API_KEY: '
 IFS= read -r -s PUBLUME_AI_API_KEY
 printf '\nTARGET_REPO_TOKEN: '
 IFS= read -r -s PUBLUME_TARGET_REPO_TOKEN
+printf '\nPRODUCTHUNT_API_TOKEN (press Enter when Product Hunt is unused): '
+IFS= read -r -s PUBLUME_PRODUCTHUNT_API_TOKEN
 printf '\n'
 
-printf '%s\n' \
-  "AI_API_KEY=$PUBLUME_AI_API_KEY" \
-  "TARGET_REPO_TOKEN=$PUBLUME_TARGET_REPO_TOKEN" |
+{
+  printf '%s\n' \
+    "AI_API_KEY=$PUBLUME_AI_API_KEY" \
+    "TARGET_REPO_TOKEN=$PUBLUME_TARGET_REPO_TOKEN"
+  if [ -n "$PUBLUME_PRODUCTHUNT_API_TOKEN" ]; then
+    printf '%s\n' "PRODUCTHUNT_API_TOKEN=$PUBLUME_PRODUCTHUNT_API_TOKEN"
+  fi
+} |
   gh secret set --repo "$PUBLUME_CORE_REPOSITORY" --env-file -
 
-unset PUBLUME_AI_API_KEY PUBLUME_TARGET_REPO_TOKEN
+unset PUBLUME_AI_API_KEY PUBLUME_TARGET_REPO_TOKEN PUBLUME_PRODUCTHUNT_API_TOKEN
 ```
 
 Verify the result. The secrets command lists names without returning secret values:

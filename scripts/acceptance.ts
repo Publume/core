@@ -60,13 +60,10 @@ async function addAlternateTheme(repository: string, themeId: string): Promise<s
 
 function createPorts(config: AppConfig, fetchFn: FetchLike, aiClient: AiClient): PipelinePorts {
   return {
-    sources: createSourceReader(
-      config.sources.entries,
-      config.sources.timeoutMs,
-      fetchFn,
-      undefined,
-      config.sources.enrichmentSearchUrlTemplate,
-    ),
+    sources: createSourceReader(config.sources.entries, config.sources.timeoutMs, fetchFn, {
+      enrichmentSearchUrlTemplate: config.sources.enrichmentSearchUrlTemplate,
+      productHuntApiToken: config.sources.productHuntApiToken,
+    }),
     editorial: createEditorial(config.editorial, aiClient),
     decisions: createFileDecisionStore(config.state.path),
     delivery: [],

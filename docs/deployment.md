@@ -90,6 +90,7 @@ Token 无法克隆或推送目标仓库。
 | --- | --- |
 | `AI_API_KEY` | AI 服务的 API Key。 |
 | `TARGET_REPO_TOKEN` | 第 3 步创建的 Fine-grained Token。 |
+| `PRODUCTHUNT_API_TOKEN` | 仅当 `SOURCE_URLS` 包含 `https://www.producthunt.com/feed` 时配置 Product Hunt Developer Token；否则省略。 |
 
 在 **Variables** 页签添加首次运行所需配置：
 
@@ -159,14 +160,21 @@ printf 'AI_API_KEY: '
 IFS= read -r -s PUBLUME_AI_API_KEY
 printf '\nTARGET_REPO_TOKEN: '
 IFS= read -r -s PUBLUME_TARGET_REPO_TOKEN
+printf '\nPRODUCTHUNT_API_TOKEN（不使用 Product Hunt 可直接回车）: '
+IFS= read -r -s PUBLUME_PRODUCTHUNT_API_TOKEN
 printf '\n'
 
-printf '%s\n' \
-  "AI_API_KEY=$PUBLUME_AI_API_KEY" \
-  "TARGET_REPO_TOKEN=$PUBLUME_TARGET_REPO_TOKEN" |
+{
+  printf '%s\n' \
+    "AI_API_KEY=$PUBLUME_AI_API_KEY" \
+    "TARGET_REPO_TOKEN=$PUBLUME_TARGET_REPO_TOKEN"
+  if [ -n "$PUBLUME_PRODUCTHUNT_API_TOKEN" ]; then
+    printf '%s\n' "PRODUCTHUNT_API_TOKEN=$PUBLUME_PRODUCTHUNT_API_TOKEN"
+  fi
+} |
   gh secret set --repo "$PUBLUME_CORE_REPOSITORY" --env-file -
 
-unset PUBLUME_AI_API_KEY PUBLUME_TARGET_REPO_TOKEN
+unset PUBLUME_AI_API_KEY PUBLUME_TARGET_REPO_TOKEN PUBLUME_PRODUCTHUNT_API_TOKEN
 ```
 
 检查结果；Secrets 命令只显示名称，不会返回密钥值：
