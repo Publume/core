@@ -70,7 +70,7 @@ The shortest working path is:
 3. enable GitHub Actions as the website repository's Pages source;
 4. add the required Core repository variables and secrets;
 5. run **Generate and publish** once in `initial` mode and verify the Pages URL;
-6. deploy the Cloudflare Trigger Worker after the website is live.
+6. keep the template's daily GitHub schedule, or optionally deploy the Cloudflare Trigger Worker after the website is live.
 
 Follow the GitHub manual deployment guide in
 [English](docs/deployment.en.md) or [简体中文](docs/deployment.md) for the exact
@@ -119,8 +119,10 @@ working credentials.
 
 ## GitHub Actions
 
-The `Generate and publish` workflow supports manual runs and
-`repository_dispatch` events of type `publume-schedule`.
+The user-owned `Scheduled generation` workflow runs once per day at `00:00 UTC`
+and calls the Core-managed `Generate and publish` workflow. `Generate and publish`
+also supports manual runs and `repository_dispatch` events of type
+`publume-schedule`.
 
 Store credentials as repository secrets:
 
@@ -139,11 +141,17 @@ For first-time setup, repository creation, and Pages configuration, follow the
 GitHub manual deployment guide in [English](docs/deployment.en.md) or
 [简体中文](docs/deployment.md).
 
-The Worker in [`scheduler/`](scheduler/) completes the scheduled deployment by
-dispatching the workflow every two hours. Deploy it only after the first website
-publication succeeds. `GITHUB_TOKEN` must be configured as a Cloudflare Worker
-secret, and `GITHUB_REPOSITORY` must be configured as a Worker environment
-variable.
+The Worker in [`scheduler/`](scheduler/) is optional. Its default Cron runs at
+`23:50 UTC` on the previous UTC day, ten minutes before the daily GitHub schedule, and dispatches the
+same Core workflow. A successful Worker-triggered run makes the next GitHub
+scheduled run skip Core; without a successful Worker run, GitHub remains the
+fallback. Deploy the Worker only after the first website publication succeeds.
+`GITHUB_TOKEN` must be configured as a Cloudflare Worker secret, and
+`GITHUB_REPOSITORY` must be configured as a Worker environment variable.
+
+Edit [`.github/workflows/schedule.yml`](.github/workflows/schedule.yml) to change
+the self-hosted GitHub Cron. Core upgrades preserve this user-owned file while
+updating the managed generation workflow and application code.
 
 ## Themes and sites
 
@@ -159,7 +167,8 @@ The theme and target marker contracts are documented in
 [`Publume/themes`](https://github.com/Publume/themes) repository.
 
 Running the `Upgrade Publume Core` workflow synchronizes a requested Core
-release into a managed repository while preserving its `state/` directory.
+release into a managed repository while preserving its `state/` directory and
+user-owned `.github/workflows/schedule.yml`.
 Running `Generate and publish` in `bootstrap` mode replaces the selected theme
 while preserving generated articles. Both operations are designed for Publume
 Cloud but remain available to self-hosted users. A successful first `initial`
@@ -197,18 +206,6 @@ PUBLUME_THEME_DIRECTORY=../themes bun run acceptance -- --output=/tmp/publume-si
 bun install --frozen-lockfile --cwd /tmp/publume-site-preview
 bun run --cwd /tmp/publume-site-preview preview
 ```
-
-To run the actual GitHub workflow locally, install Docker and
-[act](https://github.com/nektos/act), configure `.env`, and run:
-
-```bash
-bun run action:local -- --initial
-bun run action:local -- --bootstrap
-bun run action:local -- --preview
-```
-
-Local Action runs write to `.local/site.git` and do not push decision state to a
-remote repository. Preview requires the selected theme to provide a `dev` script.
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) before opening a pull request. Security
 issues must follow [SECURITY.md](SECURITY.md), not the public issue tracker.

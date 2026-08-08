@@ -4,6 +4,21 @@ Publume Core reads configuration from environment variables. Bun also loads a
 local `.env` file automatically; GitHub Actions should use repository variables
 and secrets instead.
 
+## Scheduling
+
+Repositories created from the Core template include a user-owned
+`.github/workflows/schedule.yml` with a daily `0 0 * * *` Cron (`00:00 UTC`).
+GitHub requires the Cron expression to be written directly in the workflow, so
+it cannot come from a repository variable. Edit only that file to change the
+self-hosted GitHub schedule. Core upgrades preserve an existing schedule file
+without replacing its Cron.
+
+The Cloudflare Worker is optional. Its template Cron is `50 23 * * *` (`23:50 UTC`
+on the previous UTC day), ten minutes before the default GitHub schedule. It can use a different Cloud-managed
+frequency without disabling the GitHub fallback. When a successful
+Worker-triggered run exists after the previous GitHub scheduled run, the next
+scheduled run skips Core once; otherwise it runs Core normally.
+
 ## Required secrets
 
 | Name | Purpose |

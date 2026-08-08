@@ -51,6 +51,7 @@ jobs:
             --exclude '.publume-upstream/' \
             --exclude 'state/' \
             --exclude "/$state_path" \
+            --exclude '/.github/workflows/schedule.yml' \
             .publume-upstream/ ./
           rm -rf -- .publume-upstream
           echo "core_sha=$core_sha" >> "$GITHUB_OUTPUT"

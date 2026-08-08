@@ -61,17 +61,21 @@ describe('GitHub workflow state boundary', () => {
     ).rejects.toThrow('inside the repository')
   })
 
-  test('preserves default and configured state while deleting obsolete managed files', async () => {
+  test('preserves state and a user schedule while updating managed files', async () => {
     const directory = await temporaryDirectory()
     const upstream = path.join(directory, 'upstream')
     const managed = path.join(directory, 'managed')
     await mkdir(path.join(upstream, 'src'), { recursive: true })
+    await mkdir(path.join(upstream, '.github/workflows'), { recursive: true })
     await mkdir(path.join(managed, 'state'), { recursive: true })
     await mkdir(path.join(managed, 'data'), { recursive: true })
+    await mkdir(path.join(managed, '.github/workflows'), { recursive: true })
     await writeFile(path.join(upstream, 'src/core.ts'), 'new core\n')
+    await writeFile(path.join(upstream, '.github/workflows/schedule.yml'), 'default daily schedule\n')
     await writeFile(path.join(managed, 'obsolete.txt'), 'obsolete\n')
     await writeFile(path.join(managed, 'state/decisions.json'), 'default state\n')
     await writeFile(path.join(managed, 'data/custom.json'), 'custom state\n')
+    await writeFile(path.join(managed, '.github/workflows/schedule.yml'), 'user schedule\n')
 
     await command(
       [
@@ -86,6 +90,8 @@ describe('GitHub workflow state boundary', () => {
         'state/',
         '--exclude',
         '/data/custom.json',
+        '--exclude',
+        '/.github/workflows/schedule.yml',
         `${upstream}/`,
         `${managed}/`,
       ],
@@ -94,6 +100,7 @@ describe('GitHub workflow state boundary', () => {
 
     expect(await readFile(path.join(managed, 'state/decisions.json'), 'utf8')).toBe('default state\n')
     expect(await readFile(path.join(managed, 'data/custom.json'), 'utf8')).toBe('custom state\n')
+    expect(await readFile(path.join(managed, '.github/workflows/schedule.yml'), 'utf8')).toBe('user schedule\n')
     expect(await readFile(path.join(managed, 'src/core.ts'), 'utf8')).toBe('new core\n')
     await expect(readFile(path.join(managed, 'obsolete.txt'), 'utf8')).rejects.toThrow()
   })
@@ -134,7 +141,9 @@ describe('GitHub workflow state boundary', () => {
 
   test('keeps each operation serialized, scopes secrets, and verifies upgrades', async () => {
     const generate = await readFile(path.join(root, '.github/workflows/generate.yml'), 'utf8')
+    const schedule = await readFile(path.join(root, '.github/workflows/schedule.yml'), 'utf8')
     const upgrade = await readFile(path.join(root, '.github/workflows/upgrade.yml'), 'utf8')
+    const scheduler = await readFile(path.join(root, 'scheduler/wrangler.toml'), 'utf8')
 
     expect(generate).toContain('group: publume-generate')
     expect(upgrade).toContain('group: publume-upgrade')
@@ -148,7 +157,17 @@ describe('GitHub workflow state boundary', () => {
     expect(generate).toContain('AI_CONCURRENCY:')
     expect(generate).toContain('vars.AI_CONCURRENCY')
     expect(generate).toContain('bun src/cli.ts --mode="$PUBLUME_MODE"')
+    expect(generate).toContain('workflow_call:')
+    expect(generate).toContain('actions: read')
+    expect(generate).toContain("if: github.event_name == 'schedule'")
+    expect(generate).toContain('bun scripts/schedule-gate.ts')
+    expect(generate).toContain('continue-on-error: true')
+    expect(schedule).toContain("cron: '0 0 * * *'")
+    expect(schedule).toContain('uses: ./.github/workflows/generate.yml')
+    expect(schedule).toContain('secrets: inherit')
+    expect(scheduler).toContain('crons = ["50 23 * * *"]')
     expect(upgrade).toContain('--exclude "/$state_path"')
+    expect(upgrade).toContain("--exclude '/.github/workflows/schedule.yml'")
     expect(upgrade.indexOf('bun run check')).toBeLessThan(upgrade.indexOf('- name: Commit the upgrade'))
     expect(upgrade).toContain(`Upstream-Commit: \${CORE_SHA}`)
     expect(upgrade).toContain('bun .publume-upstream/scripts/resolve-state-path.ts')

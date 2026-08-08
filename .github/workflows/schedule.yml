@@ -1,0 +1,14 @@
+name: Scheduled generation
+
+on:
+  schedule:
+    - cron: '0 0 * * *'
+
+permissions:
+  actions: read
+  contents: write
+
+jobs:
+  generate:
+    uses: ./.github/workflows/generate.yml
+    secrets: inherit

@@ -4,7 +4,7 @@ compatibility_date = "2026-08-05"
 workers_dev = false
 
 [triggers]
-crons = ["0 */2 * * *"]
+crons = ["50 23 * * *"]
 
 [observability]
 enabled = true
