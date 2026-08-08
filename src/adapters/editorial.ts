@@ -333,7 +333,7 @@ function articlePrompt(config: EditorialConfig, decision: GateDecision): string 
     config.articlePrompt,
     `Fixed editorial profile (${config.profile.id}): ${config.profile.articlePrompt}`,
     config.instructions,
-    `Generate each article in the exact requested language: ${describeOutputLanguages(config.languages)}. Keep article.language as its original BCP 47 tag. Use only gate.claims as factual claims and preserve gate.uncertainties and attribution. All languages must preserve the same claim and uncertainty mapping. Return one object per language (${config.languages.join(', ')}), each with exactly language, title, summary, blocks, sourceUrls. Follow this fixed ordered Story Block contract: ${JSON.stringify(config.profile.storyBlocks)}. Include every block without optional=true exactly once. Include an optional block at most once and only when supplied evidence supports distinct, non-repetitive content for it; otherwise omit it. Preserve configured order among emitted blocks. Every block must contain exactly id, kind, markdown, claimIds, uncertaintyIds, sourceUrls. claimIds and uncertaintyIds must reference the gate; sourceUrls must equal the sources implied by those references. Every gate claim and uncertainty must be referenced by at least one block. Reports marked acquisition=web-search may be referenced only by blocks whose tools include web-search in the fixed contract. markdown must not contain raw HTML or links. sourceUrls must exactly match gate.sourceUrls. Core renders body deterministically by joining block markdown. Return strict JSON without a code fence. Shape example: ${JSON.stringify(example)}.`,
+    `Generate each article in the exact requested language: ${describeOutputLanguages(config.languages)}. Keep article.language as its original BCP 47 tag and write naturally in that language rather than translating English phrasing literally. Use only gate.claims as factual claims and preserve gate.uncertainties and attribution. Do not add examples, mechanisms, causes, consequences, or recommendations absent from the gate. All languages must preserve the same claim and uncertainty mapping. Return one object per language (${config.languages.join(', ')}), each with exactly language, title, summary, blocks, sourceUrls. summary is one or two standalone display sentences; no block may repeat it verbatim, begin with it, or merely paraphrase it. Follow this fixed ordered Story Block contract: ${JSON.stringify(config.profile.storyBlocks)}. Include every block without optional=true exactly once. Each required block must perform its distinct function from the fixed profile instructions. Include an optional block at most once and only when supplied evidence supports distinct, non-repetitive content for it; otherwise omit it. Preserve configured order among emitted blocks. Every block must contain exactly id, kind, markdown, claimIds, uncertaintyIds, sourceUrls. claimIds and uncertaintyIds must reference the gate; sourceUrls must equal the sources implied by those references. Every gate claim and uncertainty must be referenced by at least one block. Reports marked acquisition=web-search may be referenced only by blocks whose tools include web-search in the fixed contract. markdown must not contain raw HTML or links. sourceUrls must exactly match gate.sourceUrls. Core renders body deterministically by joining block markdown. Return strict JSON without a code fence. Shape example: ${JSON.stringify(example)}.`,
   ].join('\n\n')
 }
 
@@ -346,6 +346,15 @@ function sameValues(left: readonly string[], right: readonly string[]): boolean 
     leftSet.size === rightSet.size &&
     [...leftSet].every((item) => rightSet.has(item))
   )
+}
+
+function normalizeEditorialText(value: string): string {
+  return value
+    .normalize('NFKC')
+    .toLocaleLowerCase()
+    .replace(/[^\p{L}\p{N}]+/gu, ' ')
+    .replace(/\s+/gu, ' ')
+    .trim()
 }
 
 function validateArticles(
@@ -414,6 +423,16 @@ function validateArticles(
       throw new Error('AI Story Blocks do not map every verified claim')
     if ([...uncertainties.keys()].some((id) => !usedUncertainties.has(id)))
       throw new Error('AI Story Blocks do not map every uncertainty')
+    const normalizedSummary = normalizeEditorialText(article.summary)
+    if (
+      article.blocks.some((block) => {
+        const markdown = normalizeEditorialText(block.markdown)
+        return (
+          markdown === normalizedSummary || (normalizedSummary.length >= 40 && markdown.startsWith(normalizedSummary))
+        )
+      })
+    )
+      throw new Error('AI Story Block repeats the standalone article summary')
     const body = article.blocks.map((block) => block.markdown.trim()).join('\n\n')
     if (/<\/?[A-Za-z][A-Za-z0-9-]*(?:\s[^<>]*?)?\s*\/?>/.test(`${article.title}\n${article.summary}\n${body}`))
       throw new Error('AI output contains raw HTML')

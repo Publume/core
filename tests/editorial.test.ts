@@ -56,17 +56,17 @@ function articleClient(body: string): AiClient {
                     summary: 'Validated summary',
                     blocks: [
                       {
-                        id: 'summary',
-                        kind: 'summary',
+                        id: 'lead',
+                        kind: 'lead',
                         markdown: body,
                         claimIds: ['claim-1'],
                         uncertaintyIds: [],
                         sourceUrls: [candidate.canonicalUrl],
                       },
                       {
-                        id: 'points',
-                        kind: 'key-points',
-                        markdown: 'Key points.',
+                        id: 'impact',
+                        kind: 'impact',
+                        markdown: 'Supported impact.',
                         claimIds: [],
                         uncertaintyIds: [],
                         sourceUrls: [],
@@ -152,17 +152,17 @@ describe('editorial output boundary', () => {
                       summary: `Summary in ${language}`,
                       blocks: [
                         {
-                          id: 'summary',
-                          kind: 'summary',
+                          id: 'lead',
+                          kind: 'lead',
                           markdown: `Body in ${language}`,
                           claimIds: ['claim-1'],
                           uncertaintyIds: [],
                           sourceUrls: [candidate.canonicalUrl],
                         },
                         {
-                          id: 'points',
-                          kind: 'key-points',
-                          markdown: 'Key points.',
+                          id: 'impact',
+                          kind: 'impact',
+                          markdown: 'Supported impact.',
                           claimIds: [],
                           uncertaintyIds: [],
                           sourceUrls: [],
@@ -183,6 +183,10 @@ describe('editorial output boundary', () => {
 
     for (const [tag, name] of requestedLanguages) expect(systemPrompt).toContain(`${tag} = ${name}`)
     expect(systemPrompt).toContain('Keep article.language as its original BCP 47 tag')
+    expect(systemPrompt).toContain(
+      'write naturally in that language rather than translating English phrasing literally',
+    )
+    expect(systemPrompt).toContain('no block may repeat it verbatim')
     expect(systemPrompt).toContain('Core renders body deterministically by joining block markdown')
     expect(systemPrompt).toContain(candidate.canonicalUrl)
   })
@@ -261,6 +265,11 @@ describe('editorial output boundary', () => {
     expect(await editorial.generate(candidate, decision)).toHaveLength(1)
   })
 
+  it('rejects a Story Block that repeats the standalone article summary', () => {
+    const editorial = createEditorial(config, articleClient('Validated summary'))
+    expect(editorial.generate(candidate, decision)).rejects.toThrow('repeats the standalone article summary')
+  })
+
   it('requires fixed blocks while allowing evidence-dependent profile blocks to be omitted', async () => {
     const response = (blocks: readonly object[]): AiClient => ({
       async complete() {
@@ -285,17 +294,17 @@ describe('editorial output boundary', () => {
         }
       },
     })
-    const summary = {
-      id: 'summary',
-      kind: 'summary',
+    const keyPoints = {
+      id: 'key-points',
+      kind: 'key-points',
       markdown: 'The source reports a material technology update.',
       claimIds: ['claim-1'],
       uncertaintyIds: [],
       sourceUrls: [candidate.canonicalUrl],
     }
-    const keyPoints = {
-      id: 'key-points',
-      kind: 'key-points',
+    const impact = {
+      id: 'impact',
+      kind: 'impact',
       markdown: 'The update applies to the named product.',
       claimIds: [],
       uncertaintyIds: [],
@@ -304,9 +313,9 @@ describe('editorial output boundary', () => {
     const productConfig = { ...config, profile: editorialProfiles['product-update'] }
 
     expect(
-      await createEditorial(productConfig, response([summary, keyPoints])).generate(candidate, decision),
+      await createEditorial(productConfig, response([keyPoints, impact])).generate(candidate, decision),
     ).toHaveLength(1)
-    expect(createEditorial(productConfig, response([summary])).generate(candidate, decision)).rejects.toThrow(
+    expect(createEditorial(productConfig, response([keyPoints])).generate(candidate, decision)).rejects.toThrow(
       'Story Blocks do not match',
     )
   })
@@ -326,17 +335,17 @@ describe('editorial output boundary', () => {
                       summary: 'Mapped summary',
                       blocks: [
                         {
-                          id: 'summary',
-                          kind: 'summary',
-                          markdown: 'Summary.',
+                          id: 'lead',
+                          kind: 'lead',
+                          markdown: 'Lead.',
                           claimIds: ['claim-1'],
                           uncertaintyIds: [],
                           sourceUrls: [],
                         },
                         {
-                          id: 'points',
-                          kind: 'key-points',
-                          markdown: 'Points.',
+                          id: 'impact',
+                          kind: 'impact',
+                          markdown: 'Impact.',
                           claimIds: [],
                           uncertaintyIds: [],
                           sourceUrls: [],

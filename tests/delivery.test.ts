@@ -7,8 +7,9 @@ import type { DeliveryArticle } from '../src/domain/decisions'
 const sourceUrl = 'https://example.test/source'
 const article: DeliveryArticle = {
   language: 'zh-CN',
-  title: '已核实的重要更新',
-  summary: '一段简洁、有来源支持的摘要。',
+  title: '\u{5DF2}\u{6838}\u{5B9E}\u{7684}\u{91CD}\u{8981}\u{66F4}\u{65B0}',
+  summary:
+    '\u{4E00}\u{6BB5}\u{7B80}\u{6D01}\u{3001}\u{6709}\u{6765}\u{6E90}\u{652F}\u{6301}\u{7684}\u{6458}\u{8981}\u{3002}',
   sourceUrls: [sourceUrl],
 }
 
@@ -160,7 +161,7 @@ describe('delivery adapters', () => {
     const longArticle: DeliveryArticle = {
       ...article,
       title: article.title.repeat(40),
-      summary: '很长的摘要。'.repeat(5_000),
+      summary: '\u{5F88}\u{957F}\u{7684}\u{6458}\u{8981}\u{3002}'.repeat(5_000),
     }
     const channels = createDeliveryChannels(configs, recorded.fetch)
 

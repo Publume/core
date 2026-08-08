@@ -197,17 +197,17 @@ try {
                   summary: 'Validated summary',
                   blocks: [
                     {
-                      id: 'summary',
-                      kind: 'summary',
+                      id: 'lead',
+                      kind: 'lead',
                       markdown: 'Validated body with source-backed facts.',
                       claimIds,
                       uncertaintyIds: [],
                       sourceUrls,
                     },
                     {
-                      id: 'points',
-                      kind: 'key-points',
-                      markdown: 'Key points.',
+                      id: 'impact',
+                      kind: 'impact',
+                      markdown: 'Supported impact.',
                       claimIds: [],
                       uncertaintyIds: [],
                       sourceUrls: [],
@@ -311,14 +311,19 @@ try {
       throw new Error('real theme output does not preserve the configured repository base path')
     if (!indexHtml.includes('Validated fr') || indexHtml.includes('Validated en'))
       throw new Error('default language index mixes article languages')
-    for (const localizedText of ['Publume 内容站', '最新内容', '主导航', '只保留真正重要的信号。']) {
+    for (const localizedText of [
+      'Publume \u{5185}\u{5BB9}\u{7AD9}',
+      '\u{6700}\u{65B0}\u{5185}\u{5BB9}',
+      '\u{4E3B}\u{5BFC}\u{822A}',
+      '\u{53EA}\u{4FDD}\u{7559}\u{771F}\u{6B63}\u{91CD}\u{8981}\u{7684}\u{4FE1}\u{53F7}\u{3002}',
+    ]) {
       if (!indexHtml.includes(localizedText))
         throw new Error(`site interface is missing localized text: ${localizedText}`)
     }
     const englishIndex = await readFile(path.join(checkout, 'dist/en/index.html'), 'utf8')
     if (!englishIndex.includes('Validated en') || englishIndex.includes('Validated fr'))
       throw new Error('secondary language index mixes article languages')
-    if (!englishIndex.includes('最新内容'))
+    if (!englishIndex.includes('\u{6700}\u{65B0}\u{5185}\u{5BB9}'))
       throw new Error('secondary content index did not preserve the configured interface locale')
     if (!indexHtml.includes('hreflang="en"') || !indexHtml.includes('hreflang="fr"'))
       throw new Error('multilingual index is missing alternate-language metadata')
@@ -337,7 +342,11 @@ try {
       throw new Error('real theme article is missing its source link')
     if (!articleMarkdown.includes('topicIds:') || !articleMarkdown.includes('technology-'))
       throw new Error('published article is missing stable topic identities')
-    for (const localizedText of ['来源', '编辑说明', '自动化系统协助筛选与起草']) {
+    for (const localizedText of [
+      '\u{6765}\u{6E90}',
+      '\u{7F16}\u{8F91}\u{8BF4}\u{660E}',
+      '\u{81EA}\u{52A8}\u{5316}\u{7CFB}\u{7EDF}\u{534F}\u{52A9}\u{7B5B}\u{9009}\u{4E0E}\u{8D77}\u{8349}',
+    ]) {
       if (!articleHtml.includes(localizedText))
         throw new Error(`real theme article is missing localized text: ${localizedText}`)
     }

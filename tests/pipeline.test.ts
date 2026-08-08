@@ -768,6 +768,8 @@ describe('pipeline idempotence', () => {
                     blocks: testBlocks(
                       user.gate?.sourceUrls ?? [],
                       'The source reports that the network upgrade is live.',
+                      ['lead', 'impact'],
+                      'lead',
                     ),
                     sourceUrls: user.gate?.sourceUrls,
                   })),

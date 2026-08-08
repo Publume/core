@@ -11,9 +11,16 @@ import {
   editorialProfileIds,
   editorialProfiles,
 } from '../src/config/profiles'
-import { type Candidate, candidateReports, type EvidenceClaim, type GateDecision } from '../src/domain/content'
+import {
+  type Candidate,
+  candidateReports,
+  type EvidenceClaim,
+  type GateDecision,
+  type GeneratedArticle,
+} from '../src/domain/content'
 
 type LegacyProfileId = 'news' | 'briefing' | 'analysis'
+type EvalLanguage = 'en' | 'zh-CN'
 
 type GateEvalCase = {
   readonly id: string
@@ -23,7 +30,11 @@ type GateEvalCase = {
   readonly critical?: boolean
 }
 
-type RequiredFact = { readonly id: string; readonly alternatives: readonly string[] }
+type RequiredFact = {
+  readonly id: string
+  readonly alternatives: readonly string[]
+  readonly allOf?: readonly (readonly string[])[]
+}
 
 type ArticleEvalCase = {
   readonly id: string
@@ -56,8 +67,10 @@ type ArticleResult = {
   readonly forbiddenClaims: number
   readonly missingFactIds: readonly string[]
   readonly stylePassed: boolean
+  readonly structurePassed: boolean
+  readonly summaryDistinct: boolean
   readonly passed: boolean
-  readonly output?: { readonly title: string; readonly summary: string; readonly body: string }
+  readonly output?: GeneratedArticle
   readonly responses: readonly string[]
   readonly error?: string
   readonly durationMs: number
@@ -67,24 +80,47 @@ export type ProfilePromptMetrics = {
   readonly gateAccuracy: number
   readonly criticalFalsePositives: number
   readonly articleFactRecall: number
+  readonly articleStyleRate: number
+  readonly articleStructureRate: number
+  readonly summaryDistinctRate: number
   readonly articlePassRate: number
+  readonly forbiddenClaims: number
   readonly errors: number
 }
 
-type SuiteResult = {
+export type ProfilePromptEvaluation = {
   readonly metrics: ProfilePromptMetrics
   readonly profiles: Readonly<Partial<Record<EditorialProfileId, ProfilePromptMetrics>>>
+}
+
+type SuiteResult = ProfilePromptEvaluation & {
   readonly gates: readonly GateResult[]
   readonly articles: readonly ArticleResult[]
 }
 
+export const profilePromptThresholds = {
+  minimumArticleFactRecall: 0.75,
+  gateAccuracy: 0.9,
+  articleFactRecall: 0.9,
+  articleStyleRate: 0.85,
+  articleStructureRate: 1,
+  summaryDistinctRate: 0.85,
+  articlePassRate: 0.8,
+  minimumProfileGateAccuracy: 0.5,
+  minimumProfileFactRecall: 0.7,
+  maximumRegression: 0.12,
+  minimumStructureImprovement: 0.5,
+} as const
+
 type ProfilePromptReport = {
-  readonly schemaVersion: 1
+  readonly schemaVersion: 3
   readonly datasetHash: string
   readonly beforeProfileHash: string
   readonly currentProfileHash: string
   readonly provider: string
   readonly model: string
+  readonly language: EvalLanguage
+  readonly thresholds: typeof profilePromptThresholds
   readonly startedAt: string
   readonly finishedAt: string
   readonly passed: boolean
@@ -92,12 +128,23 @@ type ProfilePromptReport = {
   readonly comparison: {
     readonly before: SuiteResult
     readonly after: SuiteResult
-    readonly delta: Pick<ProfilePromptMetrics, 'gateAccuracy' | 'articleFactRecall' | 'articlePassRate'>
+    readonly delta: Pick<
+      ProfilePromptMetrics,
+      | 'gateAccuracy'
+      | 'articleFactRecall'
+      | 'articleStyleRate'
+      | 'articleStructureRate'
+      | 'summaryDistinctRate'
+      | 'articlePassRate'
+    >
   }
 }
 
-const instructions =
-  'Publish source-linked information for a mixed professional audience. Prefer material changes, concrete evidence, explicit uncertainty, and concise explanation.'
+const instructions: Readonly<Record<EvalLanguage, string>> = {
+  en: 'Publish source-linked information for a mixed professional audience. Prefer material changes, concrete evidence, explicit uncertainty, and concise explanation.',
+  'zh-CN':
+    '\u{4E3A}\u{4E13}\u{4E1A}\u{8BFB}\u{8005}\u{53D1}\u{5E03}\u{9644}\u{5E26}\u{6765}\u{6E90}\u{7684}\u{4FE1}\u{606F}\u{3002}\u{4F18}\u{5148}\u{4FDD}\u{7559}\u{5B9E}\u{8D28}\u{53D8}\u{5316}\u{3001}\u{5177}\u{4F53}\u{8BC1}\u{636E}\u{3001}\u{660E}\u{786E}\u{7684}\u{4E0D}\u{786E}\u{5B9A}\u{6027}\u{548C}\u{7B80}\u{6D01}\u{89E3}\u{91CA}\u{3002}\u{4F7F}\u{7528}\u{81EA}\u{7136}\u{3001}\u{4E13}\u{4E1A}\u{7684}\u{7B80}\u{4F53}\u{4E2D}\u{6587}\u{FF0C}\u{907F}\u{514D}\u{9010}\u{5B57}\u{7FFB}\u{8BD1}\u{8154}\u{3002}',
+}
 
 function candidate(id: string, title: string, content: string, canonicalUrl: string): Candidate {
   return {
@@ -354,11 +401,25 @@ export const profileArticleCases: readonly ArticleEvalCase[] = [
       ),
     ],
     requiredFacts: [
-      { id: 'weight', alternatives: ['3.5 tonnes', '3.5 tons'] },
-      { id: 'dates', alternatives: ['august 10', 'september 21', 'aug. 10', 'sept. 21'] },
-      { id: 'reason', alternatives: ['bearing replacement'] },
+      { id: 'weight', alternatives: ['3.5 tonnes', '3.5 tons', '3.5\u{5428}', '3.5 \u{5428}'] },
+      { id: 'start-date', alternatives: ['august 10', 'aug. 10', '8\u{6708}10\u{65E5}', '8 \u{6708} 10 \u{65E5}'] },
+      { id: 'end-date', alternatives: ['september 21', 'sept. 21', '9\u{6708}21\u{65E5}', '9 \u{6708} 21 \u{65E5}'] },
+      {
+        id: 'reason',
+        alternatives: ['bearing replacement', '\u{66F4}\u{6362}\u{652F}\u{5EA7}', '\u{652F}\u{5EA7}\u{66F4}\u{6362}'],
+      },
     ],
-    forbiddenClaims: [{ id: 'full-closure', alternatives: ['closed to all traffic', 'cars cannot cross'] }],
+    forbiddenClaims: [
+      {
+        id: 'full-closure',
+        alternatives: [
+          'closed to all traffic',
+          'cars cannot cross',
+          '\u{6240}\u{6709}\u{8F66}\u{8F86}\u{7981}\u{6B62}\u{901A}\u{884C}',
+          '\u{5C0F}\u{6C7D}\u{8F66}\u{65E0}\u{6CD5}\u{901A}\u{884C}',
+        ],
+      },
+    ],
   },
   {
     id: 'briefing-article',
@@ -372,8 +433,9 @@ export const profileArticleCases: readonly ArticleEvalCase[] = [
       ),
     ],
     requiredFacts: [
-      { id: 'targets', alternatives: ['99.9%', '99.95%'] },
-      { id: 'plans', alternatives: ['pro and enterprise'] },
+      { id: 'old-target', alternatives: ['99.9%'] },
+      { id: 'new-target', alternatives: ['99.95%'] },
+      { id: 'plans', alternatives: ['pro and enterprise', 'pro \u{548C} enterprise', 'pro \u{4E0E} enterprise'] },
       {
         id: 'credits',
         alternatives: [
@@ -383,10 +445,33 @@ export const profileArticleCases: readonly ArticleEvalCase[] = [
           'service-credit formula will remain unchanged',
           'service-credit formula remains unchanged',
           'unchanged: service-credit formula',
+          '\u{670D}\u{52A1}\u{989D}\u{5EA6}\u{8BA1}\u{7B97}\u{516C}\u{5F0F}\u{4FDD}\u{6301}\u{4E0D}\u{53D8}',
+          '\u{670D}\u{52A1}\u{989D}\u{5EA6}\u{8BA1}\u{7B97}\u{516C}\u{5F0F}\u{672A}\u{4F5C}\u{8C03}\u{6574}',
+          '\u{670D}\u{52A1}\u{8865}\u{507F}\u{8BA1}\u{7B97}\u{516C}\u{5F0F}\u{4FDD}\u{6301}\u{4E0D}\u{53D8}',
+          '\u{670D}\u{52A1}\u{79EF}\u{5206}\u{516C}\u{5F0F}\u{4FDD}\u{6301}\u{4E0D}\u{53D8}',
+        ],
+        allOf: [
+          ['service', '\u{670D}\u{52A1}'],
+          ['formula', '\u{516C}\u{5F0F}'],
+          [
+            'unchanged',
+            '\u{4E0D}\u{53D8}',
+            '\u{672A}\u{4F5C}\u{8C03}\u{6574}',
+            '\u{672A}\u{53D1}\u{751F}\u{53D8}\u{5316}',
+          ],
         ],
       },
     ],
-    forbiddenClaims: [{ id: 'higher-credit', alternatives: ['service credits will increase'] }],
+    forbiddenClaims: [
+      {
+        id: 'higher-credit',
+        alternatives: [
+          'service credits will increase',
+          '\u{670D}\u{52A1}\u{989D}\u{5EA6}\u{5C06}\u{589E}\u{52A0}',
+          '\u{670D}\u{52A1}\u{8865}\u{507F}\u{5C06}\u{589E}\u{52A0}',
+        ],
+      },
+    ],
   },
   {
     id: 'analysis-article',
@@ -406,15 +491,55 @@ export const profileArticleCases: readonly ArticleEvalCase[] = [
     ],
     requiredFacts: [
       { id: 'energy', alternatives: ['27%'] },
-      { id: 'baseline', alternatives: ['dense baseline'] },
+      {
+        id: 'baseline',
+        alternatives: ['dense baseline', '\u{7A20}\u{5BC6}\u{57FA}\u{7EBF}'],
+        allOf: [
+          ['dense', '\u{7A20}\u{5BC6}', '\u{5BC6}\u{96C6}'],
+          ['baseline', '\u{57FA}\u{7EBF}'],
+        ],
+      },
       {
         id: 'limitation',
-        alternatives: ['production workloads were not tested', 'not tested on production workloads'],
+        alternatives: [
+          'production workloads were not tested',
+          'not tested on production workloads',
+          '\u{672A}\u{6D4B}\u{8BD5}\u{751F}\u{4EA7}\u{8D1F}\u{8F7D}',
+          '\u{751F}\u{4EA7}\u{8D1F}\u{8F7D}\u{672A}\u{6D4B}\u{8BD5}',
+          '\u{751F}\u{4EA7}\u{8D1F}\u{8F7D}\u{672A}\u{88AB}\u{6D4B}\u{8BD5}',
+        ],
+        allOf: [
+          ['production', '\u{751F}\u{4EA7}'],
+          ['workload', '\u{8D1F}\u{8F7D}', '\u{5DE5}\u{4F5C}\u{8D1F}\u{8F7D}'],
+          [
+            'not tested',
+            '\u{672A}\u{6D4B}\u{8BD5}',
+            '\u{672A}\u{88AB}\u{6D4B}\u{8BD5}',
+            '\u{672A}\u{7EB3}\u{5165}\u{6D4B}\u{8BD5}',
+          ],
+        ],
       },
-      { id: 'runs', alternatives: ['three repeated runs', '3 repeated runs'] },
+      {
+        id: 'runs',
+        alternatives: [
+          'three repeated runs',
+          '3 repeated runs',
+          '\u{4E09}\u{6B21}\u{91CD}\u{590D}\u{8FD0}\u{884C}',
+          '3\u{6B21}\u{91CD}\u{590D}\u{8FD0}\u{884C}',
+        ],
+      },
     ],
     forbiddenClaims: [
-      { id: 'production-proof', alternatives: ['proven in production', 'reduces production energy by 27%'] },
+      {
+        id: 'production-proof',
+        alternatives: [
+          'proven in production',
+          'reduces production energy by 27%',
+          '\u{5DF2}\u{5728}\u{751F}\u{4EA7}\u{73AF}\u{5883}\u{8BC1}\u{5B9E}',
+          '\u{751F}\u{4EA7}\u{73AF}\u{5883}\u{80FD}\u{8017}\u{964D}\u{4F4E}27%',
+          '\u{5DF2}\u{88AB}\u{72EC}\u{7ACB}\u{590D}\u{73B0}',
+        ],
+      },
     ],
   },
   {
@@ -429,12 +554,36 @@ export const profileArticleCases: readonly ArticleEvalCase[] = [
       ),
     ],
     requiredFacts: [
-      { id: 'problem', alternatives: ['lock convoying'] },
-      { id: 'failed-approach', alternatives: ['sharding alone'] },
-      { id: 'latency', alternatives: ['420 ms', '170 ms'] },
+      {
+        id: 'problem',
+        alternatives: ['lock convoying', '\u{9501}\u{7ADE}\u{4E89}', '\u{9501}\u{961F}\u{5217}\u{62E5}\u{585E}'],
+      },
+      {
+        id: 'failed-approach',
+        alternatives: ['sharding alone', '\u{4EC5}\u{9760}\u{5206}\u{7247}', '\u{5355}\u{9760}\u{5206}\u{7247}'],
+      },
+      { id: 'latency-before', alternatives: ['420 ms'] },
+      { id: 'latency-after', alternatives: ['170 ms'] },
       { id: 'tradeoff', alternatives: ['8%'] },
     ],
-    forbiddenClaims: [{ id: 'universal', alternatives: ['works for every workload', 'eliminates all latency'] }],
+    forbiddenClaims: [
+      {
+        id: 'universal',
+        alternatives: [
+          'works for every workload',
+          'eliminates all latency',
+          '\u{9002}\u{7528}\u{4E8E}\u{6240}\u{6709}\u{5DE5}\u{4F5C}\u{8D1F}\u{8F7D}',
+          '\u{6D88}\u{9664}\u{6240}\u{6709}\u{5EF6}\u{8FDF}',
+        ],
+      },
+      {
+        id: 'invented-mechanism',
+        alternatives: [
+          'paces requests entering the cache',
+          '\u{7BA1}\u{7406}\u{8BF7}\u{6C42}\u{8FDB}\u{5165}\u{7F13}\u{5B58}\u{7684}\u{8282}\u{594F}',
+        ],
+      },
+    ],
   },
   {
     id: 'research-review-article',
@@ -448,17 +597,44 @@ export const profileArticleCases: readonly ArticleEvalCase[] = [
       ),
     ],
     requiredFacts: [
-      { id: 'design', alternatives: ['randomized'] },
-      { id: 'sample', alternatives: ['120 classrooms'] },
+      {
+        id: 'design',
+        alternatives: ['randomized', '\u{968F}\u{673A}\u{7814}\u{7A76}', '\u{968F}\u{673A}\u{5BF9}\u{7167}'],
+      },
+      { id: 'sample', alternatives: ['120 classrooms', '120\u{95F4}\u{6559}\u{5BA4}', '120 \u{95F4}\u{6559}\u{5BA4}'] },
       { id: 'effect', alternatives: ['18%'] },
-      { id: 'duration', alternatives: ['12 weeks'] },
+      { id: 'duration', alternatives: ['12 weeks', '12\u{5468}', '12 \u{5468}'] },
       {
         id: 'limitation',
-        alternatives: ['did not measure respiratory outcomes', 'respiratory outcomes were not measured'],
+        alternatives: [
+          'did not measure respiratory outcomes',
+          'respiratory outcomes were not measured',
+          '\u{672A}\u{6D4B}\u{91CF}\u{547C}\u{5438}\u{7ED3}\u{5C40}',
+          '\u{6CA1}\u{6709}\u{6D4B}\u{91CF}\u{547C}\u{5438}\u{7ED3}\u{5C40}',
+          '\u{672A}\u{6D4B}\u{91CF}\u{547C}\u{5438}\u{9053}\u{7ED3}\u{5C40}',
+          '\u{672A}\u{6536}\u{96C6}\u{547C}\u{5438}\u{7CFB}\u{7EDF}\u{5065}\u{5EB7}\u{6570}\u{636E}',
+        ],
+        allOf: [
+          ['respiratory', '\u{547C}\u{5438}'],
+          ['outcome', '\u{7ED3}\u{5C40}', '\u{7ED3}\u{679C}', '\u{6570}\u{636E}'],
+          ['not measured', '\u{672A}\u{6D4B}\u{91CF}', '\u{6CA1}\u{6709}\u{6D4B}\u{91CF}', '\u{672A}\u{6536}\u{96C6}'],
+        ],
       },
     ],
     forbiddenClaims: [
-      { id: 'health-benefit', alternatives: ['proves a health benefit', 'prevents respiratory disease'] },
+      {
+        id: 'health-benefit',
+        alternatives: [
+          'proves a health benefit',
+          'prevents respiratory disease',
+          '\u{8BC1}\u{660E}\u{5065}\u{5EB7}\u{83B7}\u{76CA}',
+          '\u{9884}\u{9632}\u{547C}\u{5438}\u{7CFB}\u{7EDF}\u{75BE}\u{75C5}',
+        ],
+      },
+      {
+        id: 'invented-outcomes',
+        alternatives: ['cough or asthma attacks', '\u{54B3}\u{55FD}', '\u{54EE}\u{5598}\u{53D1}\u{4F5C}'],
+      },
     ],
   },
   {
@@ -473,7 +649,7 @@ export const profileArticleCases: readonly ArticleEvalCase[] = [
       ),
     ],
     requiredFacts: [
-      { id: 'affected', alternatives: ['4.2 through 4.5', '4.2 to 4.5'] },
+      { id: 'affected', alternatives: ['4.2 through 4.5', '4.2 to 4.5', '4.2 \u{81F3} 4.5', '4.2 \u{5230} 4.5'] },
       { id: 'fixed', alternatives: ['4.5.1'] },
       {
         id: 'condition',
@@ -481,9 +657,31 @@ export const profileArticleCases: readonly ArticleEvalCase[] = [
           'internet-exposed admin',
           'admin panels reachable from the internet',
           'admin panels exposed to the internet',
+          '\u{66B4}\u{9732}\u{5728}\u{4E92}\u{8054}\u{7F51}\u{4E0A}\u{7684}\u{7BA1}\u{7406}\u{540E}\u{53F0}',
+          '\u{66B4}\u{9732}\u{4E8E}\u{4E92}\u{8054}\u{7F51}\u{7684}\u{7BA1}\u{7406}\u{540E}\u{53F0}',
+          '\u{7BA1}\u{7406}\u{5458}\u{9762}\u{677F}\u{66B4}\u{9732}\u{4E8E}\u{4E92}\u{8054}\u{7F51}',
+        ],
+        allOf: [
+          [
+            'admin panel',
+            'admin-panel',
+            '\u{7BA1}\u{7406}\u{540E}\u{53F0}',
+            '\u{7BA1}\u{7406}\u{5458}\u{9762}\u{677F}',
+            '\u{7BA1}\u{7406}\u{9762}\u{677F}',
+          ],
+          ['internet', '\u{4E92}\u{8054}\u{7F51}'],
+          ['exposed', 'reachable', '\u{66B4}\u{9732}'],
         ],
       },
-      { id: 'status', alternatives: ['exploited'] },
+      {
+        id: 'status',
+        alternatives: [
+          'exploited',
+          '\u{6B63}\u{5728}\u{88AB}\u{5229}\u{7528}',
+          '\u{6B63}\u{88AB}\u{5229}\u{7528}',
+          '\u{906D}\u{5229}\u{7528}',
+        ],
+      },
       {
         id: 'mitigation',
         alternatives: [
@@ -492,11 +690,32 @@ export const profileArticleCases: readonly ArticleEvalCase[] = [
           'restrict admin-panel access',
           'limit admin panel access',
           'limiting admin panel access',
+          '\u{9650}\u{5236}\u{7BA1}\u{7406}\u{540E}\u{53F0}\u{8BBF}\u{95EE}',
+          '\u{9650}\u{5236}\u{540E}\u{53F0}\u{8BBF}\u{95EE}',
+          '\u{9650}\u{5236}\u{7BA1}\u{7406}\u{5458}\u{9762}\u{677F}\u{7684}\u{8BBF}\u{95EE}',
+        ],
+        allOf: [
+          ['restrict', 'limit', '\u{9650}\u{5236}'],
+          [
+            'admin panel',
+            'admin-panel',
+            '\u{7BA1}\u{7406}\u{540E}\u{53F0}',
+            '\u{7BA1}\u{7406}\u{5458}\u{9762}\u{677F}',
+            '\u{7BA1}\u{7406}\u{9762}\u{677F}',
+          ],
+          ['access', '\u{8BBF}\u{95EE}'],
         ],
       },
     ],
     forbiddenClaims: [
-      { id: 'universal', alternatives: ['all versions are compromised', 'every acmegateway is compromised'] },
+      {
+        id: 'universal',
+        alternatives: [
+          'all versions are compromised',
+          'every acmegateway is compromised',
+          '\u{6240}\u{6709}\u{7248}\u{672C}\u{5747}\u{5DF2}\u{5931}\u{9677}',
+        ],
+      },
     ],
   },
   {
@@ -511,10 +730,21 @@ export const profileArticleCases: readonly ArticleEvalCase[] = [
       ),
     ],
     requiredFacts: [
-      { id: 'status', alternatives: ['final rule'] },
-      { id: 'effective', alternatives: ['november 1'] },
-      { id: 'threshold', alternatives: ['100,000 active accounts'] },
-      { id: 'deadline', alternatives: ['within 30 days'] },
+      { id: 'status', alternatives: ['final rule', '\u{6700}\u{7EC8}\u{89C4}\u{5219}'] },
+      { id: 'effective', alternatives: ['november 1', '11\u{6708}1\u{65E5}', '11 \u{6708} 1 \u{65E5}'] },
+      {
+        id: 'threshold',
+        alternatives: [
+          '100,000 active accounts',
+          '10\u{4E07}\u{6D3B}\u{8DC3}\u{8D26}\u{6237}',
+          '10 \u{4E07}\u{6D3B}\u{8DC3}\u{8D26}\u{6237}',
+        ],
+        allOf: [
+          ['100,000', '10\u{4E07}', '10\u{4E07}\u{4E2A}'],
+          ['active account', '\u{6D3B}\u{8DC3}\u{8D26}\u{6237}'],
+        ],
+      },
+      { id: 'deadline', alternatives: ['within 30 days', '30\u{5929}\u{5185}', '30 \u{5929}\u{5185}'] },
       {
         id: 'exception',
         alternatives: [
@@ -524,10 +754,35 @@ export const profileArticleCases: readonly ArticleEvalCase[] = [
           'exempts smaller providers',
           'providers with 100,000 or fewer active accounts are exempt',
           'providers at or below that threshold are outside',
+          '\u{8F83}\u{5C0F}\u{4F9B}\u{5E94}\u{5546}\u{4E0D}\u{5728}\u{6B64}\u{4E49}\u{52A1}\u{8303}\u{56F4}\u{5185}',
+          '\u{672A}\u{8D85}\u{8FC7}\u{8BE5}\u{95E8}\u{69DB}\u{7684}\u{8F83}\u{5C0F}\u{4F9B}\u{5E94}\u{5546}\u{4E0D}\u{5728}\u{4E49}\u{52A1}\u{8303}\u{56F4}\u{5185}',
+          '10\u{4E07}\u{6216}\u{4EE5}\u{4E0B}\u{7684}\u{4F9B}\u{5E94}\u{5546}\u{8C41}\u{514D}',
+          '\u{6D3B}\u{8DC3}\u{8D26}\u{6237}\u{6570}\u{672A}\u{8D85}\u{8FC7}10\u{4E07}\u{7684}\u{670D}\u{52A1}\u{63D0}\u{4F9B}\u{5546}\u{4E0D}\u{627F}\u{62C5}\u{8BE5}\u{4E49}\u{52A1}',
+        ],
+        allOf: [
+          [
+            'smaller',
+            '100,000 or fewer',
+            'at or below',
+            '\u{672A}\u{8D85}\u{8FC7}',
+            '10\u{4E07}\u{6216}\u{4EE5}\u{4E0B}',
+          ],
+          ['provider', '\u{4F9B}\u{5E94}\u{5546}', '\u{63D0}\u{4F9B}\u{5546}'],
+          ['exempt', 'outside', '\u{8C41}\u{514D}', '\u{4E0D}\u{627F}\u{62C5}', '\u{4E0D}\u{5728}\u{4E49}\u{52A1}'],
         ],
       },
     ],
-    forbiddenClaims: [{ id: 'already-effective', alternatives: ['already in effect', 'currently required'] }],
+    forbiddenClaims: [
+      {
+        id: 'already-effective',
+        alternatives: [
+          'already in effect',
+          'currently required',
+          '\u{5DF2}\u{7ECF}\u{751F}\u{6548}',
+          '\u{5F53}\u{524D}\u{5DF2}\u{7ECF}\u{8981}\u{6C42}',
+        ],
+      },
+    ],
   },
   {
     id: 'market-intelligence-article',
@@ -541,14 +796,56 @@ export const profileArticleCases: readonly ArticleEvalCase[] = [
       ),
     ],
     requiredFacts: [
-      { id: 'profit', alternatives: ['$84 million'] },
-      { id: 'profit-baseline', alternatives: ['$126 million'] },
-      { id: 'provisions', alternatives: ['$61 million', '$22 million'] },
-      { id: 'period', alternatives: ['second-quarter', 'second quarter'] },
+      { id: 'profit', alternatives: ['$84 million', '8400\u{4E07}\u{7F8E}\u{5143}', '8400 \u{4E07}\u{7F8E}\u{5143}'] },
+      {
+        id: 'profit-baseline',
+        alternatives: ['$126 million', '1.26\u{4EBF}\u{7F8E}\u{5143}', '1.26 \u{4EBF}\u{7F8E}\u{5143}'],
+      },
+      {
+        id: 'provisions',
+        alternatives: ['$61 million', '6100\u{4E07}\u{7F8E}\u{5143}', '6100 \u{4E07}\u{7F8E}\u{5143}'],
+      },
+      {
+        id: 'provisions-baseline',
+        alternatives: ['$22 million', '2200\u{4E07}\u{7F8E}\u{5143}', '2200 \u{4E07}\u{7F8E}\u{5143}'],
+      },
+      {
+        id: 'period',
+        alternatives: [
+          'second-quarter',
+          'second quarter',
+          '\u{7B2C}\u{4E8C}\u{5B63}\u{5EA6}',
+          '\u{4E8C}\u{5B63}\u{5EA6}',
+        ],
+      },
     ],
     forbiddenClaims: [
-      { id: 'advice', alternatives: ['buy the stock', 'sell the stock', 'investment opportunity'] },
-      { id: 'forecast', alternatives: ['the share price will', 'guaranteed to fall'] },
+      {
+        id: 'advice',
+        alternatives: [
+          'buy the stock',
+          'sell the stock',
+          'investment opportunity',
+          '\u{4E70}\u{5165}\u{80A1}\u{7968}',
+          '\u{5356}\u{51FA}\u{80A1}\u{7968}',
+        ],
+      },
+      {
+        id: 'forecast',
+        alternatives: [
+          'the share price will',
+          'guaranteed to fall',
+          '\u{80A1}\u{4EF7}\u{5C06}\u{4F1A}',
+          '\u{4FDD}\u{8BC1}\u{4E0B}\u{8DCC}',
+        ],
+      },
+      {
+        id: 'unsupported-cause',
+        alternatives: [
+          '\u{62E8}\u{5907}\u{4E0A}\u{5347}\u{5BFC}\u{81F4}\u{5229}\u{6DA6}\u{4E0B}\u{964D}',
+          'provisions caused the profit decline',
+        ],
+      },
     ],
   },
   {
@@ -564,12 +861,27 @@ export const profileArticleCases: readonly ArticleEvalCase[] = [
     ],
     requiredFacts: [
       { id: 'version', alternatives: ['nebuladb 6.0'] },
-      { id: 'status', alternatives: ['generally available'] },
-      { id: 'migration', alternatives: ['online schema migration'] },
-      { id: 'upgrade', alternatives: ['5.x upgrade path', 'upgrade path from 5.x'] },
-      { id: 'compatibility', alternatives: ['compatibility mode'] },
+      {
+        id: 'status',
+        alternatives: ['generally available', '\u{6B63}\u{5F0F}\u{53D1}\u{5E03}', '\u{4E00}\u{822C}\u{53EF}\u{7528}'],
+      },
+      { id: 'migration', alternatives: ['online schema migration', '\u{5728}\u{7EBF} schema \u{8FC1}\u{79FB}'] },
+      {
+        id: 'upgrade',
+        alternatives: ['5.x upgrade path', 'upgrade path from 5.x', '5.x \u{5347}\u{7EA7}\u{8DEF}\u{5F84}'],
+      },
+      { id: 'compatibility', alternatives: ['compatibility mode', '\u{517C}\u{5BB9}\u{6A21}\u{5F0F}'] },
     ],
-    forbiddenClaims: [{ id: 'zero-downtime', alternatives: ['guarantees zero downtime'] }],
+    forbiddenClaims: [
+      {
+        id: 'zero-downtime',
+        alternatives: [
+          'guarantees zero downtime',
+          '\u{4FDD}\u{8BC1}\u{96F6}\u{505C}\u{673A}',
+          '\u{4FDD}\u{8BC1}\u{4E0D}\u{505C}\u{673A}',
+        ],
+      },
+    ],
   },
 ]
 
@@ -643,13 +955,13 @@ const beforeProfileMapping: Readonly<Record<EditorialProfileId, LegacyProfileId>
   'product-update': 'news',
 }
 
-function editorialConfig(profile: EditorialProfile): EditorialConfig {
+function editorialConfig(profile: EditorialProfile, language: EvalLanguage): EditorialConfig {
   return {
     profile,
-    instructions,
+    instructions: instructions[language],
     gatePrompt: DEFAULT_GATE_PROMPT,
     articlePrompt: DEFAULT_ARTICLE_PROMPT,
-    languages: ['en'],
+    languages: [language],
     publishThreshold: 0.75,
     deduplicationContextSize: 50,
   }
@@ -667,33 +979,85 @@ function includesAny(text: string, alternatives: readonly string[]): boolean {
   return alternatives.some((alternative) => normalized.includes(normalize(alternative)))
 }
 
+function matchesFact(text: string, fact: RequiredFact): boolean {
+  return includesAny(text, fact.alternatives) || Boolean(fact.allOf?.every((group) => includesAny(text, group)))
+}
+
 function wordCount(text: string): number {
   return text.trim().split(/\s+/u).filter(Boolean).length
 }
 
+function normalizedCharacters(text: string): readonly string[] {
+  return [
+    ...text
+      .normalize('NFKC')
+      .toLocaleLowerCase()
+      .replace(/[^\p{L}\p{N}]+/gu, ''),
+  ]
+}
+
+function characterTrigrams(text: string): ReadonlySet<string> {
+  const characters = normalizedCharacters(text)
+  if (characters.length < 3) return new Set(characters.length === 0 ? [] : [characters.join('')])
+  return new Set(characters.slice(0, -2).map((_, index) => characters.slice(index, index + 3).join('')))
+}
+
+function diceSimilarity(left: string, right: string): number {
+  const leftGrams = characterTrigrams(left)
+  const rightGrams = characterTrigrams(right)
+  if (leftGrams.size + rightGrams.size === 0) return 1
+  let intersection = 0
+  for (const gram of leftGrams) if (rightGrams.has(gram)) intersection += 1
+  return (2 * intersection) / (leftGrams.size + rightGrams.size)
+}
+
+function matchesProfileStructure(article: GeneratedArticle, profile: EditorialProfile): boolean {
+  const actualKinds = article.blocks.map(({ kind }) => kind)
+  const actualKindSet = new Set(actualKinds)
+  const configuredIndexes = actualKinds.map((kind) => profile.storyBlocks.findIndex((block) => block.kind === kind))
+  return (
+    actualKinds.length === actualKindSet.size &&
+    configuredIndexes.every((index) => index >= 0) &&
+    configuredIndexes.every((index, position) => position === 0 || index > (configuredIndexes[position - 1] ?? -1)) &&
+    profile.storyBlocks.every((block) => block.optional || actualKindSet.has(block.kind))
+  )
+}
+
 export function scoreProfileArticle(
   evalCase: ArticleEvalCase,
-  article: { readonly title: string; readonly summary: string; readonly body: string },
+  article: GeneratedArticle,
 ): Omit<ArticleResult, 'id' | 'profileId' | 'output' | 'responses' | 'error' | 'durationMs'> {
   const text = `${article.title}\n${article.summary}\n${article.body}`
-  const missingFactIds = evalCase.requiredFacts
-    .filter((fact) => !includesAny(text, fact.alternatives))
-    .map((fact) => fact.id)
+  const missingFactIds = evalCase.requiredFacts.filter((fact) => !matchesFact(text, fact)).map((fact) => fact.id)
   const factMatches = evalCase.requiredFacts.length - missingFactIds.length
-  const forbiddenClaims = evalCase.forbiddenClaims.filter((fact) => includesAny(text, fact.alternatives)).length
+  const forbiddenClaims = evalCase.forbiddenClaims.filter((fact) => matchesFact(text, fact)).length
   const bodyWords = wordCount(article.body)
-  let stylePassed = !/\b(?:shocking|game[ -]?changing|you won\W?t believe)\b/iu.test(article.title)
+  const isChinese = article.language === 'zh-CN'
+  let stylePassed =
+    !/\b(?:shocking|game[ -]?changing|you won\W?t believe)\b|\u{9707}\u{60CA}|\u{98A0}\u{8986}\u{6027}|\u{4E0D}\u{6562}\u{76F8}\u{4FE1}/iu.test(
+      article.title,
+    )
   if (evalCase.profileId === 'briefing') stylePassed &&= article.body.length <= 1_200
   if (['general', 'market-intelligence', 'product-update'].includes(evalCase.profileId))
-    stylePassed &&= wordCount(article.title) <= 20
-  if (evalCase.profileId === 'explainer') stylePassed &&= bodyWords <= 350
+    stylePassed &&= isChinese ? normalizedCharacters(article.title).length <= 60 : wordCount(article.title) <= 20
+  if (evalCase.profileId === 'explainer') stylePassed &&= isChinese ? article.body.length <= 700 : bodyWords <= 350
+  const structurePassed = matchesProfileStructure(article, editorialProfiles[evalCase.profileId])
+  const summaryDistinct = article.blocks.every((block) => diceSimilarity(article.summary, block.markdown) < 0.82)
+  const factRecall = evalCase.requiredFacts.length === 0 ? 1 : factMatches / evalCase.requiredFacts.length
   return {
     factMatches,
     factTotal: evalCase.requiredFacts.length,
     forbiddenClaims,
     missingFactIds,
     stylePassed,
-    passed: factMatches === evalCase.requiredFacts.length && forbiddenClaims === 0 && stylePassed,
+    structurePassed,
+    summaryDistinct,
+    passed:
+      factRecall >= profilePromptThresholds.minimumArticleFactRecall &&
+      forbiddenClaims === 0 &&
+      stylePassed &&
+      structurePassed &&
+      summaryDistinct,
   }
 }
 
@@ -754,7 +1118,14 @@ function metrics(gates: readonly GateResult[], articles: readonly ArticleResult[
     gateAccuracy: gates.length === 0 ? 1 : gates.filter(({ passed }) => passed).length / gates.length,
     criticalFalsePositives: gates.filter(({ criticalFalsePositive }) => criticalFalsePositive).length,
     articleFactRecall: factTotal === 0 ? 1 : factMatches / factTotal,
+    articleStyleRate:
+      articles.length === 0 ? 1 : articles.filter(({ stylePassed }) => stylePassed).length / articles.length,
+    articleStructureRate:
+      articles.length === 0 ? 1 : articles.filter(({ structurePassed }) => structurePassed).length / articles.length,
+    summaryDistinctRate:
+      articles.length === 0 ? 1 : articles.filter(({ summaryDistinct }) => summaryDistinct).length / articles.length,
     articlePassRate: articles.length === 0 ? 1 : articles.filter(({ passed }) => passed).length / articles.length,
+    forbiddenClaims: articles.reduce((total, article) => total + article.forbiddenClaims, 0),
     errors: [...gates, ...articles].filter(({ error }) => error !== undefined).length,
   }
 }
@@ -773,15 +1144,16 @@ async function evaluateSuite(
   profileFor: (id: EditorialProfileId) => EditorialProfile,
   client: AiClient,
   concurrency: number,
+  language: EvalLanguage,
 ): Promise<SuiteResult> {
   const gates = await mapLimit(profileGateCases, concurrency, async (evalCase): Promise<GateResult> => {
     const started = performance.now()
     const capture = captureResponses(client)
     try {
-      const decision = await createEditorial(editorialConfig(profileFor(evalCase.profileId)), capture.client).evaluate(
-        evalCase.candidate,
-        [],
-      )
+      const decision = await createEditorial(
+        editorialConfig(profileFor(evalCase.profileId), language),
+        capture.client,
+      ).evaluate(evalCase.candidate, [])
       return {
         id: evalCase.id,
         profileId: evalCase.profileId,
@@ -822,17 +1194,17 @@ async function evaluateSuite(
         uncertainties: [],
         sourceUrls,
       }
-      const generated = await createEditorial(editorialConfig(profileFor(evalCase.profileId)), capture.client).generate(
-        evalCase.candidate,
-        decision,
-      )
+      const generated = await createEditorial(
+        editorialConfig(profileFor(evalCase.profileId), language),
+        capture.client,
+      ).generate(evalCase.candidate, decision)
       const article = generated[0]
       if (!article) throw new Error('AI response did not contain an article')
       return {
         id: evalCase.id,
         profileId: evalCase.profileId,
         ...scoreProfileArticle(evalCase, article),
-        output: { title: article.title, summary: article.summary, body: article.body },
+        output: article,
         responses: capture.responses,
         durationMs: Math.round(performance.now() - started),
       }
@@ -845,6 +1217,8 @@ async function evaluateSuite(
         forbiddenClaims: 0,
         missingFactIds: evalCase.requiredFacts.map((fact) => fact.id),
         stylePassed: false,
+        structurePassed: false,
+        summaryDistinct: false,
         passed: false,
         responses: capture.responses,
         error: errorMessage(error),
@@ -859,22 +1233,50 @@ function comparisonDelta(before: ProfilePromptMetrics, after: ProfilePromptMetri
   return {
     gateAccuracy: after.gateAccuracy - before.gateAccuracy,
     articleFactRecall: after.articleFactRecall - before.articleFactRecall,
+    articleStyleRate: after.articleStyleRate - before.articleStyleRate,
+    articleStructureRate: after.articleStructureRate - before.articleStructureRate,
+    summaryDistinctRate: after.summaryDistinctRate - before.summaryDistinctRate,
     articlePassRate: after.articlePassRate - before.articlePassRate,
   }
 }
 
-export function profileComparisonPasses(before: ProfilePromptMetrics, after: ProfilePromptMetrics): boolean {
-  const delta = comparisonDelta(before, after)
+function profileMinimumPasses(metrics: ProfilePromptMetrics): boolean {
   return (
-    after.gateAccuracy === 1 &&
-    after.criticalFalsePositives === 0 &&
-    after.articleFactRecall === 1 &&
-    after.articlePassRate === 1 &&
-    after.errors === 0 &&
-    delta.gateAccuracy >= 0 &&
-    delta.articleFactRecall >= 0 &&
-    delta.articlePassRate >= 0 &&
-    Object.values(delta).some((value) => value > 0)
+    metrics.gateAccuracy >= profilePromptThresholds.minimumProfileGateAccuracy &&
+    metrics.articleFactRecall >= profilePromptThresholds.minimumProfileFactRecall &&
+    metrics.articleStructureRate === profilePromptThresholds.articleStructureRate &&
+    metrics.criticalFalsePositives === 0 &&
+    metrics.forbiddenClaims === 0 &&
+    metrics.errors === 0
+  )
+}
+
+export function profileComparisonPasses(before: ProfilePromptEvaluation, after: ProfilePromptEvaluation): boolean {
+  const { metrics } = after
+  const delta = comparisonDelta(before.metrics, metrics)
+  const noMaterialRegression = [
+    delta.gateAccuracy,
+    delta.articleFactRecall,
+    delta.articleStyleRate,
+    delta.summaryDistinctRate,
+    delta.articlePassRate,
+  ].every((value) => value >= -profilePromptThresholds.maximumRegression)
+  return (
+    metrics.gateAccuracy >= profilePromptThresholds.gateAccuracy &&
+    metrics.criticalFalsePositives === 0 &&
+    metrics.articleFactRecall >= profilePromptThresholds.articleFactRecall &&
+    metrics.articleStyleRate >= profilePromptThresholds.articleStyleRate &&
+    metrics.articleStructureRate === profilePromptThresholds.articleStructureRate &&
+    metrics.summaryDistinctRate >= profilePromptThresholds.summaryDistinctRate &&
+    metrics.articlePassRate >= profilePromptThresholds.articlePassRate &&
+    metrics.forbiddenClaims === 0 &&
+    metrics.errors === 0 &&
+    editorialProfileIds.every((profileId) => {
+      const profile = after.profiles[profileId]
+      return profile !== undefined && profileMinimumPasses(profile)
+    }) &&
+    noMaterialRegression &&
+    delta.articleStructureRate >= profilePromptThresholds.minimumStructureImprovement
   )
 }
 
@@ -887,13 +1289,15 @@ function signedPercentage(value: number): string {
 }
 
 function printSummary(report: ProfilePromptReport): void {
-  console.log(`Profile prompt eval: ${report.provider}/${report.model} dataset=${report.datasetHash.slice(0, 12)}`)
-  console.log('profile              gate    facts   articles  errors')
+  console.log(
+    `Profile prompt eval: ${report.provider}/${report.model} language=${report.language} dataset=${report.datasetHash.slice(0, 12)}`,
+  )
+  console.log('profile              gate    facts   style   shape   distinct articles  forbidden errors')
   for (const id of editorialProfileIds) {
     const result = report.current.profiles[id]
     if (!result) continue
     console.log(
-      `${id.padEnd(20)} ${percentage(result.gateAccuracy).padEnd(7)} ${percentage(result.articleFactRecall).padEnd(7)} ${percentage(result.articlePassRate).padEnd(9)} ${result.errors}`,
+      `${id.padEnd(20)} ${percentage(result.gateAccuracy).padEnd(7)} ${percentage(result.articleFactRecall).padEnd(7)} ${percentage(result.articleStyleRate).padEnd(7)} ${percentage(result.articleStructureRate).padEnd(7)} ${percentage(result.summaryDistinctRate).padEnd(8)} ${percentage(result.articlePassRate).padEnd(9)} ${String(result.forbiddenClaims).padEnd(9)} ${result.errors}`,
     )
   }
   const { before, after, delta } = report.comparison
@@ -903,6 +1307,15 @@ function printSummary(report: ProfilePromptReport): void {
   )
   console.log(
     `facts ${percentage(before.metrics.articleFactRecall)} -> ${percentage(after.metrics.articleFactRecall)} (${signedPercentage(delta.articleFactRecall)})`,
+  )
+  console.log(
+    `style ${percentage(before.metrics.articleStyleRate)} -> ${percentage(after.metrics.articleStyleRate)} (${signedPercentage(delta.articleStyleRate)})`,
+  )
+  console.log(
+    `shape ${percentage(before.metrics.articleStructureRate)} -> ${percentage(after.metrics.articleStructureRate)} (${signedPercentage(delta.articleStructureRate)})`,
+  )
+  console.log(
+    `distinct ${percentage(before.metrics.summaryDistinctRate)} -> ${percentage(after.metrics.summaryDistinctRate)} (${signedPercentage(delta.summaryDistinctRate)})`,
   )
   console.log(
     `articles ${percentage(before.metrics.articlePassRate)} -> ${percentage(after.metrics.articlePassRate)} (${signedPercentage(delta.articlePassRate)})`,
@@ -926,6 +1339,12 @@ function positiveInteger(value: string | undefined, fallback: number, name: stri
   return parsed
 }
 
+function evalLanguage(): EvalLanguage {
+  const language = optionValue('language') ?? 'en'
+  if (language === 'en' || language === 'zh-CN') return language
+  throw new Error('language must be en or zh-CN')
+}
+
 function aiConfig(): AiConfig {
   const apiKey = process.env.AI_API_KEY?.trim() || process.env.DEEPSEEK_API_KEY?.trim()
   if (!apiKey) throw new Error('AI_API_KEY or DEEPSEEK_API_KEY is required for profile prompt eval')
@@ -944,6 +1363,7 @@ function aiConfig(): AiConfig {
 
 async function main(): Promise<void> {
   const config = aiConfig()
+  const language = evalLanguage()
   const concurrency = positiveInteger(
     optionValue('concurrency') ?? process.env.PROMPT_EVAL_CONCURRENCY,
     4,
@@ -951,21 +1371,25 @@ async function main(): Promise<void> {
   )
   const startedAt = new Date().toISOString()
   const client = createOpenAiClient(config)
-  const current = await evaluateSuite((id) => editorialProfiles[id], client, concurrency)
-  const before = await evaluateSuite((id) => legacyProfiles[beforeProfileMapping[id]], client, concurrency)
+  const current = await evaluateSuite((id) => editorialProfiles[id], client, concurrency, language)
+  const before = await evaluateSuite((id) => legacyProfiles[beforeProfileMapping[id]], client, concurrency, language)
   const delta = comparisonDelta(before.metrics, current.metrics)
   const report: ProfilePromptReport = {
-    schemaVersion: 1,
-    datasetHash: createHash('sha256').update(JSON.stringify({ profileGateCases, profileArticleCases })).digest('hex'),
+    schemaVersion: 3,
+    datasetHash: createHash('sha256')
+      .update(JSON.stringify({ language, thresholds: profilePromptThresholds, profileGateCases, profileArticleCases }))
+      .digest('hex'),
     beforeProfileHash: createHash('sha256')
       .update(JSON.stringify({ beforeProfileMapping, legacyProfiles }))
       .digest('hex'),
     currentProfileHash: createHash('sha256').update(JSON.stringify(editorialProfiles)).digest('hex'),
     provider: config.provider,
     model: config.model,
+    language,
+    thresholds: profilePromptThresholds,
     startedAt,
     finishedAt: new Date().toISOString(),
-    passed: profileComparisonPasses(before.metrics, current.metrics),
+    passed: profileComparisonPasses(before, current),
     current,
     comparison: { before, after: current, delta },
   }

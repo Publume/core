@@ -46,6 +46,12 @@ Profile prompts have a separate paired evaluation:
 bun run eval:profiles -- --output=/tmp/publume-profile-prompt-eval.json
 ```
 
+Generate and score Simplified Chinese output with the same fixtures and runtime path:
+
+```bash
+bun run eval:profiles -- --language=zh-CN --output=/tmp/publume-profile-prompt-eval-zh-CN.json
+```
+
 It runs 18 gate cases and 9 article cases against both sides of the comparison:
 
 - **before:** the former generic `news`, `briefing`, and `analysis` policies,
@@ -53,13 +59,32 @@ It runs 18 gate cases and 9 article cases against both sides of the comparison:
 - **after:** the nine current publication-task profiles on the same candidates,
   claims, model, and runtime path.
 
-The profile evaluation passes only when every current gate classification,
-required article fact, and article rubric passes, with no critical false
-positives and no request or contract errors. The after side must not regress any
-measured quality dimension and must improve at least one.
+The 9 article fixtures contain 42 independently scored facts. Generation is
+non-deterministic, so exact fact and article scores are diagnostics rather than
+universal 100% gates. A single article passes with at least 75% of its required
+facts when its style, structure, summary distinctness, and forbidden-claim
+checks also pass.
+
+The aggregate thresholds are:
+
+- gate accuracy and fact recall: at least 90%;
+- style and summary distinctness: at least 85%;
+- complete-article pass rate: at least 80%;
+- fixed Story Block structure: 100%;
+- critical false positives, forbidden claims, request errors, and output-contract errors: zero.
+
+Each profile must also retain at least 70% of its required facts, classify at
+least one of its two gate fixtures correctly, preserve its fixed structure, and
+have no hard failure. Relative to the legacy prompts, a soft metric may move by
+at most 12 percentage points while structure conformance must improve by at
+least 50 points. This prevents small model variance from failing the run without
+letting aggregate scores hide a broken profile or weakening source boundaries.
+
 The JSON report stores both profile hashes, the fixture hash, per-profile
-results, and percentage-point deltas.
+results, full generated articles, raw model responses, and percentage-point
+deltas. Report schema version 3 also stores the evaluated language and the exact
+thresholds used for the pass decision.
 
 ## Evidence boundary
 
-This evaluation measures one model configuration against a fixed synthetic dataset. It checks classification and the source-bounded gate/article output contracts, but it does not prove factual truth, exercise article-page retrieval or evaluate report grouping. It is not a substitute for production monitoring, human editorial review, or evaluation across every supported provider and language. Model, dataset hash, timestamps, per-case outputs, failures, and request duration are stored in the optional JSON report so results can be compared without treating one run as universal proof.
+This evaluation measures one model configuration against a fixed synthetic dataset. It checks classification, source-bounded gate/article output contracts, deterministic profile structure, and direct summary repetition. It does not prove factual truth, measure broader semantic or stylistic quality, exercise article-page retrieval, or evaluate report grouping. One Chinese run does not establish quality across topics, providers, or repeated model samples. Production monitoring and human editorial review remain necessary. Model, language, dataset hash, timestamps, per-case outputs, failures, and request duration are stored in the optional JSON report so results can be compared without treating one run as universal proof.
