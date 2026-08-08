@@ -21,6 +21,13 @@ const maximumEvidenceCharacters = 30_000
 const maximumReadableElements = 50_000
 const maximumArticleResponseBytes = 4_000_000
 const maximumArticleRedirects = 5
+const maximumFetchAttempts = 3
+const retryableHttpStatuses = new Set([403, 408, 425, 429, 500, 502, 503, 504])
+const requestHeaders = {
+  accept: 'application/atom+xml, application/rss+xml, application/xml;q=0.9, text/html;q=0.8, */*;q=0.5',
+  'accept-language': 'en-US,en;q=0.8',
+  'user-agent': 'Publume/0.1 (+https://github.com/Publume/core)',
+}
 const blockedIpv4ArticleAddresses = new BlockList()
 const blockedIpv6ArticleAddresses = new BlockList()
 
@@ -58,9 +65,41 @@ for (const [network, prefix] of [
 
 type ResolveHostname = (hostname: string) => Promise<readonly string[]>
 
+function retryableFetchError(error: unknown): boolean {
+  return (
+    error instanceof TypeError || (error instanceof DOMException && ['AbortError', 'TimeoutError'].includes(error.name))
+  )
+}
+
+async function fetchResponse(
+  fetchFn: FetchLike,
+  url: string,
+  timeoutMs: number,
+  init: Omit<RequestInit, 'headers' | 'signal'> = {},
+): Promise<Response> {
+  for (let attempt = 1; attempt <= maximumFetchAttempts; attempt += 1) {
+    try {
+      const response = await fetchFn(url, {
+        ...init,
+        headers: requestHeaders,
+        signal: AbortSignal.timeout(timeoutMs),
+      })
+      if (!retryableHttpStatuses.has(response.status) || attempt === maximumFetchAttempts) return response
+      await response.body?.cancel()
+    } catch (error) {
+      if (!retryableFetchError(error) || attempt === maximumFetchAttempts) throw error
+    }
+    await new Promise((resolve) => setTimeout(resolve, 250 * 2 ** (attempt - 1)))
+  }
+  throw new Error('HTTP retry loop exhausted')
+}
+
 async function fetchDocument(fetchFn: FetchLike, url: string, timeoutMs: number): Promise<Document> {
-  const response = await fetchFn(url, { signal: AbortSignal.timeout(timeoutMs) })
-  if (!response.ok) throw new Error(`HTTP ${response.status}`)
+  const response = await fetchResponse(fetchFn, url, timeoutMs)
+  if (!response.ok) {
+    await response.body?.cancel()
+    throw new Error(`HTTP ${response.status}`)
+  }
   return { text: await response.text(), contentType: response.headers.get('content-type')?.toLowerCase() || '' }
 }
 
@@ -152,7 +191,7 @@ async function fetchArticleDocument(
   let url = value
   for (let redirects = 0; redirects <= maximumArticleRedirects; redirects += 1) {
     await assertPublicArticleUrl(url, resolveHostname)
-    const response = await fetchFn(url, { signal: AbortSignal.timeout(timeoutMs), redirect: 'manual' })
+    const response = await fetchResponse(fetchFn, url, timeoutMs, { redirect: 'manual' })
     if (response.status >= 300 && response.status < 400) {
       const location = response.headers.get('location')
       if (!location) throw new Error(`Article redirect ${response.status} has no location`)
@@ -160,7 +199,10 @@ async function fetchArticleDocument(
       url = new URL(location, url).toString()
       continue
     }
-    if (!response.ok) throw new Error(`HTTP ${response.status}`)
+    if (!response.ok) {
+      await response.body?.cancel()
+      throw new Error(`HTTP ${response.status}`)
+    }
     return {
       text: await readArticleResponse(response),
       contentType: response.headers.get('content-type')?.toLowerCase() || '',

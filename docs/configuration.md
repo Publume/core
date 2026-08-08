@@ -52,6 +52,10 @@ actual response model, attempt count, status, and available token usage in
 `modelCalls`. Invalid JSON/schema output receives one representation-only repair
 request; evidence and domain validation failures are never repaired into success.
 
+Source and article requests identify Publume explicitly and retry transient network failures and HTTP 403, 408, 425, 429,
+500, 502, 503, and 504 responses twice. Recoverable article-evidence failures appear in the run summary as
+`evidenceFailures`; they make the run `partial` but do not prevent initial site creation.
+
 ## Content mission
 
 | Name | Required | Default | Purpose |

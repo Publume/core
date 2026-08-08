@@ -384,6 +384,39 @@ describe('configuration and source boundaries', () => {
     expect(evidence.candidates[0]?.content).toContain('dates, figures, attribution')
   })
 
+  it('identifies itself and retries a transient article access denial', async () => {
+    let articleRequests = 0
+    const userAgents: string[] = []
+    const reader = createSourceReader(
+      [{ id: 'news', url: 'https://news.example.org/feed.xml' }],
+      20_000,
+      async (input, init) => {
+        if (String(input).endsWith('/feed.xml'))
+          return response(
+            '<?xml version="1.0"?><rss version="2.0"><channel><item><guid>report-1</guid><title>Brief feed title</title><link>https://news.example.org/reports/1</link><description>Short feed summary.</description></item></channel></rss>',
+            'application/rss+xml',
+          )
+        articleRequests += 1
+        userAgents.push(new Headers(init?.headers).get('user-agent') ?? '')
+        if (articleRequests === 1) return new Response('temporary access denial', { status: 403 })
+        return response(
+          '<article><h1>Full report</h1><p>The report contains enough concrete evidence after a transient access denial.</p></article>',
+          'text/html',
+        )
+      },
+    )
+
+    const evidence = await reader.collectEvidence((await reader.collect()).candidates)
+
+    expect(articleRequests).toBe(2)
+    expect(userAgents).toEqual([
+      'Publume/0.1 (+https://github.com/Publume/core)',
+      'Publume/0.1 (+https://github.com/Publume/core)',
+    ])
+    expect(evidence.errors).toEqual([])
+    expect(evidence.fetched).toBe(1)
+  })
+
   it('extracts evidence from prose without semantic article containers', async () => {
     const reader = createSourceReader(
       [{ id: 'news', url: 'https://news.example.org/feed.xml' }],

@@ -30,8 +30,8 @@ You need:
 - a GitHub account, plus a Cloudflare account only when deploying the optional Worker;
 - a working OpenAI Chat Completions-compatible endpoint, API key, and model name; the endpoint must support JSON Object
   response format;
-- at least one reachable RSS, Atom, JSON, or HTML source containing an item published within the last 24 hours whose article
-  URL is also reachable;
+- at least one RSS, Atom, JSON, or HTML source; to publish during the first run, it must also contain a recent item whose
+  article URL is reachable;
 - a browser; command-line configuration needs GitHub CLI, while Worker deployment also needs local Git and Bun 1.3.14 or
   newer.
 
@@ -61,8 +61,9 @@ Use the repository template rather than a fork. The new repository includes a **
 5. After creating it, open **Settings → Pages**.
 6. Under **Build and deployment → Source**, select **GitHub Actions**.
 
-The first Core `initial` run writes the complete site, at least one validated article, and the Pages workflow into this empty
-repository. If it already contains ordinary files and has no `.publume-site.json`, Core refuses to overwrite it.
+The first Core `initial` run writes the complete site and Pages workflow into this empty repository. It also writes articles
+when content passes validation. If the repository already contains ordinary files and has no `.publume-site.json`, Core refuses
+to overwrite it.
 
 Your Pages URL is normally:
 
@@ -196,19 +197,21 @@ other repository configuration.
 4. Select the `main` branch and choose `initial` for **Run mode**.
 5. Click the green **Run workflow** button and wait for the run to finish.
 
-A successful first publication must meet every condition:
+A successful first deployment must meet every condition:
 
 1. **Generate and publish** is green in Core;
-2. its summary contains a non-empty `targetCommitSha` and `published` is at least `1`;
-3. Website contains a `content: publish validated articles` commit with generated article files;
+2. its summary contains a non-empty `targetCommitSha`; `published` may be `0`;
+3. Website contains a commit with the theme, generated site configuration, and Pages workflow; the same commit also contains
+   article files when content passes validation;
 4. **Deploy site** is green in Website;
 5. the URL under **Settings → Pages** opens and its assets load correctly.
 
 GitHub documents that a Pages change can take up to about 10 minutes to become available. A green Core workflow proves content
 generation and publication, not a live website; always check Website's **Deploy site** workflow and final URL.
 
-`initial` fails explicitly when no article passes validation, so an empty site cannot be reported as ready. Correct the source,
-model, or publication instructions before retrying.
+`initial` still completes the site when no article passes validation. `status: "success"` means the Website commit was created;
+recoverable evidence or AI processing failures produce `status: "partial"` with details such as `evidenceFailures`, and later
+scheduled runs retry the content.
 
 ## 6. Optional: deploy the Cloudflare Trigger Worker
 
@@ -282,8 +285,8 @@ directly in the workflow and cannot read it from a repository variable.
 
 | Resource | Completion evidence |
 | --- | --- |
-| Core | `initial` succeeds with `targetCommitSha` and `published >= 1`. |
-| Website | It contains an article commit, **Deploy site** succeeds, and its Pages URL opens. |
+| Core | `initial` succeeds with a non-empty `targetCommitSha`; `published` may be `0`. |
+| Website | It contains a generated site commit, **Deploy site** succeeds, and its Pages URL opens. |
 | Trigger Worker (optional) | Worker and Cron exist and have caused a real successful `repository_dispatch` run. |
 
 The default GitHub-scheduled deployment is complete when the first two rows pass. Require the third row only when enabling the
@@ -300,7 +303,7 @@ Cloudflare improvement.
 | The final Core `git push` returns 403 | A repository or organization policy blocks Actions from writing contents. Check **Settings → Actions → General** and `main` branch protection. |
 | Website has an article commit, but Core failed only at `Persist decision state` | Do not delete Website or recreate the site. Fix Core's Actions write permission, then continue with a normal `run`; verify both repositories afterward. |
 | The site opens but asset paths are broken | `SITE_URL` is missing the project path. Use a URL such as `https://owner.github.io/repository/`, then run once in `run` mode. |
-| `initial` reports that no article passed validation | Check source reachability and freshness, model output, and `CONTENT_INSTRUCTIONS`; do not treat the failure as an empty-site success. |
+| `initial` succeeds with `published: 0` | The site exists, but no item met the publication standard. Check filter counters, `evidenceFailures`, model output, and `CONTENT_INSTRUCTIONS`; later schedules continue retrying. |
 | Worker deploys but never triggers Core | Check the Worker Cron, `GITHUB_REPOSITORY`, Worker secret `GITHUB_TOKEN`, and whether the token selects the correct Core repository with Contents Read and write. |
 | A custom GitHub Cron disappears after a Core upgrade | Edit only the user-owned `.github/workflows/schedule.yml`; do not move Cron into the Core-managed `generate.yml`. Upgrades preserve the former. |
 | A normal workflow succeeds with no new article | This is not necessarily an error. Check sources, `MAX_ITEM_AGE_HOURS`, `PUBLISH_THRESHOLD`, and filter counters in the summary. |

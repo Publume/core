@@ -28,7 +28,7 @@ Website 仓库（公开，构建并部署 GitHub Pages）
 
 - GitHub 账号；只有部署可选 Worker 时才需要 Cloudflare 账号；
 - 可用的 OpenAI Chat Completions 兼容接口、API Key 和模型名；接口必须支持 JSON Object 响应格式；
-- 至少一个确认可以访问的 RSS、Atom、JSON 或 HTML 信息源，其中要有最近 24 小时内发布且正文链接可访问的内容；
+- 至少一个 RSS、Atom、JSON 或 HTML 信息源；如果希望首次运行立即产出文章，其中还要有最近 24 小时内发布且正文链接可访问的内容；
 - 浏览器；命令行批量配置需要 GitHub CLI，部署 Worker 还需要本地 Git 和 Bun 1.3.14 或更高版本。
 
 本教程以公开 Website 仓库和 GitHub Pages 为目标。当前 Website Workflow 对私有仓库只执行构建，不上传或部署
@@ -56,7 +56,7 @@ Pages，因此私有 Website 只能作为构建归档，不能按本教程得到
 5. 创建仓库后进入 **Settings → Pages**。
 6. 在 **Build and deployment → Source** 中选择 **GitHub Actions**。
 
-Core 的首次 `initial` 运行会把完整站点、至少一篇通过验证的文章和 Pages Workflow 写入这个空仓库。若仓库已有
+Core 的首次 `initial` 运行会把完整站点和 Pages Workflow 写入这个空仓库；有内容通过验证时会同时写入文章。若仓库已有
 普通文件且没有 `.publume-site.json`，Core 会拒绝覆盖它。
 
 你的 Pages 地址通常是：
@@ -188,18 +188,19 @@ gh secret list --repo "$PUBLUME_CORE_REPOSITORY"
 4. Branch 选择 `main`，**Run mode** 选择 `initial`。
 5. 再次点击绿色的 **Run workflow**，等待运行结束。
 
-首次发布成功必须同时满足：
+首次建站成功必须同时满足：
 
 1. Core 仓库中的 **Generate and publish** 运行显示绿色成功；
-2. 运行摘要含有非空的 `targetCommitSha`，且 `published` 至少为 `1`；
-3. Website 仓库出现包含生成文章文件的 `content: publish validated articles` 提交；
+2. 运行摘要含有非空的 `targetCommitSha`；`published` 可以为 `0`；
+3. Website 仓库出现包含主题、站点配置和 Pages Workflow 的提交；有文章通过时同一提交还会包含文章文件；
 4. Website 仓库中的 **Deploy site** Workflow 显示绿色成功；
 5. **Settings → Pages** 给出的地址可以打开，页面资源路径正常。
 
 GitHub 官方说明 Pages 变更最多可能需要约 10 分钟才可访问。Core Workflow 成功只证明内容已经生成和提交，
 不能证明网站已经部署；必须继续检查 Website 的 **Deploy site** 和最终地址。
 
-`initial` 没有任何文章通过验证时会明确失败，不能把空站点标记为就绪。修正信息源、模型或发布要求后才能重试。
+`initial` 没有文章通过验证时仍会完成建站。摘要的 `status: "success"` 表示站点提交已经创建；正文抓取或 AI
+处理出现局部故障时则为 `status: "partial"`，并通过 `evidenceFailures` 等字段给出原因，后续定时运行会继续重试。
 
 ## 6. 可选：部署 Cloudflare Trigger Worker
 
@@ -271,8 +272,8 @@ Publume Cloud 可以用自定义频率部署 Worker。手动部署者若要改�
 
 | 资源 | 完成判据 |
 | --- | --- |
-| Core | `initial` 成功，摘要有 `targetCommitSha` 且 `published >= 1`。 |
-| Website | 有文章提交，**Deploy site** 成功，Pages 地址可访问。 |
+| Core | `initial` 成功，摘要有非空的 `targetCommitSha`；`published` 可以为 `0`。 |
+| Website | 有生成站点提交，**Deploy site** 成功，Pages 地址可访问。 |
 | Trigger Worker（可选） | Worker 和 Cron 已存在，实际触发过一次成功的 `repository_dispatch` 运行。 |
 
 前两行满足后，默认 GitHub 定时部署就已完成。只有选择 Cloudflare 增强时才要求第三行。
@@ -288,7 +289,7 @@ Publume Cloud 可以用自定义频率部署 Worker。手动部署者若要改�
 | Core 最后 `git push` 返回 403 | Core 或组织策略阻止 Actions 写入内容。检查 **Settings → Actions → General** 和 `main` 分支保护规则。 |
 | Website 已有文章提交，但 Core 只在 `Persist decision state` 步骤失败 | 不要删除 Website 或重新创建站点。先修复 Core 的 Actions 写权限，再用普通 `run` 继续；同时复核 Website 和 Core 两边的结果。 |
 | 网站能打开但资源路径错误 | `SITE_URL` 没有填写完整项目路径。项目站点应类似 `https://owner.github.io/repository/`，修正后运行一次 `run`。 |
-| `initial` 报告没有文章通过验证 | 检查信息源可访问性、内容新鲜度、模型输出和 `CONTENT_INSTRUCTIONS`；不要把失败当成空站点成功。 |
+| `initial` 成功但 `published: 0` | 建站已经完成，本轮没有内容达到发布标准。检查过滤计数、`evidenceFailures`、模型输出和 `CONTENT_INSTRUCTIONS`；后续定时运行会继续尝试。 |
 | Worker 部署成功但没有触发 Core | 检查 Worker 的 Cron、`GITHUB_REPOSITORY`、Worker Secret `GITHUB_TOKEN`，以及 Token 是否只选择了正确的 Core 仓库并具有 Contents Read and write。 |
 | 修改的 GitHub cron 在 Core 升级后丢失 | 只修改用户所有的 `.github/workflows/schedule.yml`，不要把 cron 移入 Core 管理的 `generate.yml`。升级会保留前者。 |
 | 普通 Workflow 成功但没有新文章 | 这不一定是错误。检查信息源、`MAX_ITEM_AGE_HOURS`、`PUBLISH_THRESHOLD` 和运行摘要中的过滤计数。 |

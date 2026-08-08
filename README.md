@@ -172,8 +172,9 @@ user-owned `.github/workflows/schedule.yml`.
 Running `Generate and publish` in `bootstrap` mode replaces the selected theme
 while preserving generated articles. Both operations are designed for Publume
 Cloud but remain available to self-hosted users. A successful first `initial`
-run installs the theme, executes the content pipeline, and publishes at least
-one validated article; it never reports an empty site as successfully ready.
+run installs and builds the theme even when no candidate is publishable. Its
+summary contains the Website commit in `targetCommitSha`; `published` may be
+zero, and later scheduled runs can add validated articles.
 
 ## Development
 

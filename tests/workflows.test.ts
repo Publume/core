@@ -162,6 +162,8 @@ describe('GitHub workflow state boundary', () => {
     expect(generate).toContain("if: github.event_name == 'schedule'")
     expect(generate).toContain('bun scripts/schedule-gate.ts')
     expect(generate).toContain('continue-on-error: true')
+    expect(generate).toContain('id: core')
+    expect(generate).toContain("if: always() && steps.core.outcome != 'skipped'")
     expect(schedule).toContain("cron: '0 0 * * *'")
     expect(schedule).toContain('uses: ./.github/workflows/generate.yml')
     expect(schedule).toContain('secrets: inherit')

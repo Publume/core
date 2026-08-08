@@ -227,24 +227,32 @@ describe('pipeline idempotence', () => {
     expect(publishedMode).toBe('content')
   })
 
-  it('fails initial deployment instead of deploying an empty site when no candidate is publishable', async () => {
+  it('bootstraps an initial site when no candidate is publishable', async () => {
     const root = `/tmp/publume-empty-initial-${Date.now()}-${Math.random()}`
     const config = loadConfig(configEnv({ MINIMUM_CONTENT_LENGTH: '200' }), { rootDir: root })
-    let publishes = 0
+    let publishedArticles = -1
+    let publishedMode: 'content' | 'bootstrap' | undefined
 
-    await expect(
-      runPipeline(
-        config,
-        testPorts(config, {
-          publish: async () => {
-            publishes += 1
-            return 'unexpected-commit'
-          },
-        }),
-        { mode: 'initial', allowTestSources: true },
-      ),
-    ).rejects.toThrow('Initial deployment requires at least one validated article')
-    expect(publishes).toBe(0)
+    const result = await runPipeline(
+      config,
+      testPorts(config, {
+        publish: async (articles, mode) => {
+          publishedArticles = articles.length
+          publishedMode = mode
+          return 'empty-site-commit'
+        },
+      }),
+      { mode: 'initial', allowTestSources: true },
+    )
+
+    expect(result).toMatchObject({
+      status: 'success',
+      generated: 0,
+      published: 0,
+      targetCommitSha: 'empty-site-commit',
+    })
+    expect(publishedArticles).toBe(0)
+    expect(publishedMode).toBe('content')
   })
 
   it('bootstraps or replaces a theme without reading sources or generating content', async () => {
@@ -298,22 +306,75 @@ describe('pipeline idempotence', () => {
     await expect(runPipeline(config, ports)).rejects.toThrow('All configured sources failed')
   })
 
-  it('fails the run when every selected candidate lacks article evidence', async () => {
+  it('reports a partial run and still publishes site configuration when every candidate lacks article evidence', async () => {
     const root = `/tmp/publume-all-evidence-failed-${Date.now()}-${Math.random()}`
     const config = loadConfig(configEnv(), { rootDir: root })
     const fetchFn: FetchLike = async (input) => {
       if (String(input).endsWith('/feed.xml')) return feedFixture(input)
       throw new Error('article unavailable')
     }
+    let publishedArticles = -1
 
-    await expect(runPipeline(config, testPorts(config, { fetchFn }), { allowTestSources: true })).rejects.toThrow(
-      'All selected candidates failed evidence collection',
+    const result = await runPipeline(
+      config,
+      testPorts(config, {
+        fetchFn,
+        publish: async (articles) => {
+          publishedArticles = articles.length
+          return 'partial-site-commit'
+        },
+      }),
+      { allowTestSources: true },
     )
+
+    expect(result).toMatchObject({
+      status: 'partial',
+      evidenceErrors: 1,
+      evidenceFailures: [
+        { sourceId: 'example-test-1', url: 'https://example.test/pipeline-1', error: 'article unavailable' },
+      ],
+      generated: 0,
+      published: 0,
+      targetCommitSha: 'partial-site-commit',
+    })
+    expect(publishedArticles).toBe(0)
     expect(
       Object.values((await createFileDecisionStore(config.state.path).load()).decisions).some(
         (decision) => decision.status === 'failed' && decision.reason === 'evidence-unavailable',
       ),
     ).toBe(true)
+  })
+
+  it('reports a partial initial run and still publishes the site when editorial processing fails', async () => {
+    const root = `/tmp/publume-all-editorial-failed-${Date.now()}-${Math.random()}`
+    const config = loadConfig(configEnv(), { rootDir: root })
+    let publishedArticles = -1
+    const aiClient: AiClient = {
+      async complete() {
+        throw new Error('model unavailable')
+      },
+    }
+
+    const result = await runPipeline(
+      config,
+      testPorts(config, {
+        aiClient,
+        publish: async (articles) => {
+          publishedArticles = articles.length
+          return 'partial-initial-commit'
+        },
+      }),
+      { mode: 'initial', allowTestSources: true },
+    )
+
+    expect(result).toMatchObject({
+      status: 'partial',
+      failed: 1,
+      generated: 0,
+      published: 0,
+      targetCommitSha: 'partial-initial-commit',
+    })
+    expect(publishedArticles).toBe(0)
   })
 
   it('prepares the target and collects sources concurrently', async () => {

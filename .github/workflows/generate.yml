@@ -91,6 +91,7 @@ jobs:
       - if: steps.schedule_gate.outputs.should_run != 'false'
         run: bun ci --ignore-scripts
       - name: Run Publume Core
+        id: core
         if: steps.schedule_gate.outputs.should_run != 'false'
         env:
           AI_API_KEY: ${{ secrets.AI_API_KEY }}
@@ -107,7 +108,7 @@ jobs:
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
       - name: Persist decision state
-        if: steps.schedule_gate.outputs.should_run != 'false'
+        if: always() && steps.core.outcome != 'skipped'
         env:
           GITHUB_TOKEN: ${{ github.token }}
         run: |

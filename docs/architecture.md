@@ -122,8 +122,9 @@ the site, and commits the replacement. Normal content runs still fail closed on
 a theme mismatch.
 
 A theme may ship sample articles for standalone development. During initial deployment,
-Core clears those examples before writing validated generated articles;
-generated articles are the sole production content in that path.
+Core clears those examples before writing any validated generated articles. The generated
+article directory remains empty when nothing passes validation; later runs remain its sole
+content owner.
 
 Published article frontmatter keeps human-readable topic labels together with
 deterministic topic IDs. Themes use the IDs for stable archive URLs while older

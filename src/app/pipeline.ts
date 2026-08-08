@@ -3,6 +3,7 @@ import {
   type Article,
   type Candidate,
   candidateReports,
+  type EvidenceCollectionResult,
   type GateDecision,
   type GeneratedArticle,
   type ModelCall,
@@ -36,6 +37,7 @@ export type RunSummary = {
   selected: number
   evidenceFetched: number
   evidenceErrors: number
+  evidenceFailures: EvidenceCollectionResult['errors']
   enrichmentFetched: number
   enrichmentErrors: number
   storyGroups: number
@@ -175,6 +177,7 @@ function bootstrapSummary(targetCommitSha?: string): RunSummary {
     selected: 0,
     evidenceFetched: 0,
     evidenceErrors: 0,
+    evidenceFailures: [],
     enrichmentFetched: 0,
     enrichmentErrors: 0,
     storyGroups: 0,
@@ -485,7 +488,14 @@ async function executePipeline(config: AppConfig, ports: PipelinePorts, options:
     enrichmentTargets.map((candidate, index) => [candidate, enrichment.candidates[index] ?? candidate]),
   )
   const evidenceCandidates = evidence.candidates.map((candidate) => enrichmentByCandidate.get(candidate) ?? candidate)
-  const stories = await ports.editorial.consolidate(evidenceCandidates)
+  const evidenceReadyCandidates = evidenceCandidates.filter((candidate) =>
+    candidateReports(candidate).some((report) => report.contentOrigin === 'article-page'),
+  )
+  const evidenceReady = new Set(evidenceReadyCandidates)
+  for (const candidate of evidenceCandidates) {
+    if (!evidenceReady.has(candidate)) prepareCandidate(candidate, context)
+  }
+  const stories = await ports.editorial.consolidate(evidenceReadyCandidates)
   const prepared = stories.flatMap((candidate) => {
     const item = prepareCandidate(candidate, context)
     return item ? [item] : []
@@ -494,34 +504,6 @@ async function executePipeline(config: AppConfig, ports: PipelinePorts, options:
     evaluateCandidate(candidate, context),
   )
   const articles = outcomes.flatMap((outcome) => applyCandidateOutcome(outcome, context))
-
-  if (
-    selected.length > 0 &&
-    evidenceCandidates.every((candidate) =>
-      candidateReports(candidate).every((report) => report.contentOrigin !== 'article-page'),
-    )
-  ) {
-    state.configHash = configHash
-    pruneDecisions(state, config.state.maxRecords)
-    await ports.decisions.save(state)
-    throw new Error('All selected candidates failed evidence collection')
-  }
-  if (
-    context.counters.gateEvaluated > 0 &&
-    context.counters.failed === context.counters.gateEvaluated &&
-    context.counters.rejected === 0 &&
-    articles.length === 0
-  ) {
-    state.configHash = configHash
-    pruneDecisions(state, config.state.maxRecords)
-    await ports.decisions.save(state)
-    throw new Error('All selected stories failed editorial processing')
-  }
-
-  if (options.mode === 'initial' && articles.length === 0)
-    throw new Error(
-      'Initial deployment requires at least one validated article, but no candidate passed the publication gate',
-    )
 
   const commit = await publish(articles, context)
   if (commit)
@@ -546,7 +528,7 @@ async function executePipeline(config: AppConfig, ports: PipelinePorts, options:
     context.counters.failed > 0 ||
     previousDelivery.failed + currentDelivery.failed > 0
   return {
-    status: partial ? 'partial' : articles.length > 0 ? 'success' : 'noop',
+    status: partial ? 'partial' : articles.length > 0 || (options.mode === 'initial' && commit) ? 'success' : 'noop',
     collected: collection.candidates.length,
     deduplicated: selection.deduplicated,
     tooOld: selection.tooOld,
@@ -555,10 +537,11 @@ async function executePipeline(config: AppConfig, ports: PipelinePorts, options:
     selected: selected.length,
     evidenceFetched: evidence.fetched,
     evidenceErrors: evidence.errors.length,
+    evidenceFailures: evidence.errors,
     enrichmentFetched: enrichment.fetched,
     enrichmentErrors: enrichment.errors.length,
     storyGroups: stories.length,
-    reportsMerged: evidenceCandidates.length - stories.length,
+    reportsMerged: evidenceReadyCandidates.length - stories.length,
     skipped: Math.max(0, selection.skipped),
     ...context.counters,
     published: commit ? articles.length : 0,
