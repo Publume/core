@@ -46,8 +46,10 @@ request; evidence and domain validation failures are never repaired into success
 | `RSSHUB_BASE_URL` | for `rsshub://` | - | HTTPS base URL of a self-hosted or trusted RSSHub instance. Core resolves routes through this one endpoint. |
 | `ENRICHMENT_SEARCH_URL_TEMPLATE` | no | - | HTTPS RSS/Atom/JSON/HTML search endpoint with one `{query}` placeholder. Used only when the fixed profile allows `web-search` and evidence is below its minimum. |
 | `CONTENT_INSTRUCTIONS` | yes | - | Audience, topic, exclusions, and editorial standard. |
-| `GATE_PROMPT` | no | built in | Publication decision instructions. |
-| `ARTICLE_PROMPT` | no | built in | Article generation instructions. |
+| `GATE_PROMPT` | no | built in | Complete publication-decision prompt override retained for backward compatibility. Prefer `GATE_PROMPT_SUPPLEMENT`. |
+| `ARTICLE_PROMPT` | no | built in | Complete article-writing prompt override retained for backward compatibility. Prefer `ARTICLE_PROMPT_SUPPLEMENT`. |
+| `GATE_PROMPT_SUPPLEMENT` | no | - | Additional publication-decision guidance appended to the selected base prompt. |
+| `ARTICLE_PROMPT_SUPPLEMENT` | no | - | Additional article-writing guidance appended to the selected base prompt. |
 | `OUTPUT_LANGUAGES` | no | `en` | Comma- or newline-separated language tags. |
 | `DEFAULT_CONTENT_LANGUAGE` | no | first output language | Language shown at the site root; it must be included in `OUTPUT_LANGUAGES`. |
 | `PUBLISH_THRESHOLD` | no | `0.75` | Minimum gate score from 0 to 1. |
@@ -79,7 +81,7 @@ Choose `general` when a site mixes subjects or no specialized task fits.
 
 Each profile owns discovery priorities, minimum evidence, ordered Story Blocks,
 optional evidence-dependent blocks, and enrichment budgets. User instructions
-and prompt overrides refine one fixed profile rather than selecting a profile
+and prompt supplements refine one fixed profile rather than selecting a profile
 per candidate. Generated claims carry source references, and every Story Block
 must map back to those claim/uncertainty IDs. Core joins validated block Markdown
 deterministically so version 1 Themes keep their existing article-body contract.

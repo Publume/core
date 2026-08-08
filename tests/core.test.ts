@@ -76,6 +76,38 @@ describe('configuration and source boundaries', () => {
     expect(config.theme).toEqual({ repository: 'Publume/themes', ref: 'main', id: 'editorial' })
   })
 
+  it('appends configured editorial guidance without replacing the Core defaults', () => {
+    const config = loadConfig(
+      configEnv({
+        GATE_PROMPT_SUPPLEMENT: 'Only approve changes that affect the configured audience.',
+        ARTICLE_PROMPT_SUPPLEMENT: 'Use a concise and neutral tone.',
+      }),
+      { rootDir: '/tmp/publume-test' },
+    )
+
+    expect(config.editorial.gatePrompt).toContain('material new information')
+    expect(config.editorial.gatePrompt).toEndWith('Only approve changes that affect the configured audience.')
+    expect(config.editorial.articlePrompt).toContain('reader-first')
+    expect(config.editorial.articlePrompt).toEndWith('Use a concise and neutral tone.')
+  })
+
+  it('keeps legacy prompt overrides compatible while appending supplements', () => {
+    const config = loadConfig(
+      configEnv({
+        GATE_PROMPT: 'Legacy publication decision rules.',
+        ARTICLE_PROMPT: 'Legacy article writing rules.',
+        GATE_PROMPT_SUPPLEMENT: 'Reject changes outside the configured audience.',
+        ARTICLE_PROMPT_SUPPLEMENT: 'Prefer short paragraphs.',
+      }),
+      { rootDir: '/tmp/publume-test' },
+    )
+
+    expect(config.editorial.gatePrompt).toStartWith('Legacy publication decision rules.')
+    expect(config.editorial.gatePrompt).toEndWith('Reject changes outside the configured audience.')
+    expect(config.editorial.articlePrompt).toStartWith('Legacy article writing rules.')
+    expect(config.editorial.articlePrompt).toEndWith('Prefer short paragraphs.')
+  })
+
   it('loads supported delivery channels from one secret JSON value', () => {
     const config = loadConfig(
       configEnv({

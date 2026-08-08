@@ -17,6 +17,10 @@ export const DEFAULT_ARTICLE_PROMPT = [
   'Do not refer to the input as a candidate or supplied text. Do not invent facts, quotations, figures, dates, people, organizations, links, or sources. Do not place Markdown links or bare URLs in the body; source links are rendered separately from sourceUrls. Never reconstruct a destination from linked text or prior knowledge. Do not provide professional advice. Return strict JSON.',
 ].join('\n')
 
+function withPromptSupplement(basePrompt: string, supplement: string): string {
+  return supplement ? `${basePrompt}\n\nConfigured editorial supplement:\n${supplement}` : basePrompt
+}
+
 type Environment = Record<string, string | undefined>
 
 const httpsUrl = z.url().refine((value) => new URL(value).protocol === 'https:', 'must use HTTPS')
@@ -241,6 +245,9 @@ export function loadConfig(env: Environment = process.env, options: { rootDir?: 
   if (isGitHubRepository(targetRepository) && !targetToken)
     throw new Error('TARGET_REPO_TOKEN is required for a GitHub target')
 
+  const gatePrompt = read.optional('GATE_PROMPT', DEFAULT_GATE_PROMPT)
+  const articlePrompt = read.optional('ARTICLE_PROMPT', DEFAULT_ARTICLE_PROMPT)
+
   return {
     ai: {
       provider: read.required('AI_PROVIDER'),
@@ -255,8 +262,8 @@ export function loadConfig(env: Environment = process.env, options: { rootDir?: 
     editorial: {
       profile: editorialProfile(read.optional('SITE_TYPE', 'general')),
       instructions: read.required('CONTENT_INSTRUCTIONS'),
-      gatePrompt: read.optional('GATE_PROMPT', DEFAULT_GATE_PROMPT),
-      articlePrompt: read.optional('ARTICLE_PROMPT', DEFAULT_ARTICLE_PROMPT),
+      gatePrompt: withPromptSupplement(gatePrompt, read.optional('GATE_PROMPT_SUPPLEMENT')),
+      articlePrompt: withPromptSupplement(articlePrompt, read.optional('ARTICLE_PROMPT_SUPPLEMENT')),
       languages: outputLanguages,
       publishThreshold: read.number('PUBLISH_THRESHOLD', 0.75, { min: 0, max: 1 }),
       deduplicationContextSize: read.number('DEDUPLICATION_CONTEXT_SIZE', 50, { min: 0, max: 200 }),
