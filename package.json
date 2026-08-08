@@ -41,13 +41,16 @@
     "check": "bun run quality && bun run typecheck && bun test && bun run acceptance"
   },
   "dependencies": {
+    "@mozilla/readability": "0.6.0",
     "cheerio": "^1.1.2",
+    "jsdom": "26.1.0",
     "rss-parser": "^3.13.0",
     "zod": "^4.0.0"
   },
   "devDependencies": {
     "@biomejs/biome": "2.5.7",
     "@types/bun": "latest",
+    "@types/jsdom": "30.0.0",
     "@types/node": "^26.1.2",
     "@types/xml2js": "^0.4.14",
     "typescript": "^7.0.2"

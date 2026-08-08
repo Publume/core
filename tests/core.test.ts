@@ -299,6 +299,74 @@ describe('configuration and source boundaries', () => {
     expect(evidence.candidates[0]?.content).toContain('dates, figures, attribution')
   })
 
+  it('extracts evidence from prose without semantic article containers', async () => {
+    const reader = createSourceReader(
+      [{ id: 'news', url: 'https://news.example.org/feed.xml' }],
+      20_000,
+      async (input) => {
+        if (String(input).endsWith('/feed.xml'))
+          return response(
+            '<?xml version="1.0"?><rss version="2.0"><channel><item><guid>report-1</guid><title>Brief feed title</title><link>https://news.example.org/reports/1</link><description>Discovery summary.</description></item></channel></rss>',
+            'application/rss+xml',
+          )
+        return response(
+          `<html><head><title>Independent analysis</title></head><body>
+            <div class="top-links"><a href="/home">Home</a><a href="/topics">Topics</a></div>
+            <div class="layout"><div class="story-copy">
+              <h1>Independent analysis</h1>
+              <p>${'The investigation documents a concrete change and attributes it to named sources. '.repeat(8)}</p>
+              <p>${'A second section explains consequences, dates, and remaining uncertainty for readers. '.repeat(8)}</p>
+            </div></div>
+            <div class="related"><a href="/related">Related story</a></div>
+          </body></html>`,
+          'text/html',
+        )
+      },
+    )
+
+    const evidence = await reader.collectEvidence((await reader.collect()).candidates)
+
+    expect(evidence.errors).toEqual([])
+    expect(evidence.fetched).toBe(1)
+    expect(evidence.candidates[0]).toMatchObject({
+      title: 'Independent analysis',
+      contentOrigin: 'article-page',
+    })
+    expect(evidence.candidates[0]?.content).toContain('remaining uncertainty for readers')
+    expect(evidence.candidates[0]?.content).not.toContain('Related story')
+  })
+
+  it('extracts a small article from a large but bounded page shell', async () => {
+    const reader = createSourceReader(
+      [{ id: 'news', url: 'https://news.example.org/feed.xml' }],
+      20_000,
+      async (input) => {
+        if (String(input).endsWith('/feed.xml'))
+          return response(
+            '<?xml version="1.0"?><rss version="2.0"><channel><item><guid>report-1</guid><title>Brief feed title</title><link>https://news.example.org/reports/1</link><description>Discovery summary.</description></item></channel></rss>',
+            'application/rss+xml',
+          )
+        return response(
+          `<html><head><title>Large shell report</title><style>${'x'.repeat(1_050_000)}</style></head><body>
+            <div class="story-copy"><h1>Large shell report</h1>
+              <p>${'The verified report contains a bounded factual account for readers. '.repeat(12)}</p>
+              <p>${'Its evidence remains small even though the surrounding page shell is large. '.repeat(12)}</p>
+            </div>
+            <script>${'x'.repeat(1_050_000)}</script>
+          </body></html>`,
+          'text/html',
+        )
+      },
+    )
+
+    const evidence = await reader.collectEvidence((await reader.collect()).candidates)
+
+    expect(evidence.errors).toEqual([])
+    expect(evidence.fetched).toBe(1)
+    expect(evidence.candidates[0]?.content).toContain('surrounding page shell is large')
+    expect(evidence.candidates[0]?.content.length).toBeLessThan(2_000)
+  })
+
   it('fetches article hostnames that resolve only to public IPv4 addresses', async () => {
     const requests: string[] = []
     const reader = createSourceReader(
@@ -384,7 +452,7 @@ describe('configuration and source boundaries', () => {
             '<?xml version="1.0"?><rss version="2.0"><channel><item><guid>report-1</guid><title>Report</title><link>https://news.example.org/reports/1</link><description>Discovery summary.</description></item></channel></rss>',
             'application/rss+xml',
           )
-        return response(`<article>${'x'.repeat(2_100_000)}</article>`, 'text/html')
+        return response(`<article>${'x'.repeat(4_100_000)}</article>`, 'text/html')
       },
     )
 

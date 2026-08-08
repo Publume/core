@@ -1,6 +1,7 @@
 import { lookup } from 'node:dns/promises'
 import { BlockList, isIP } from 'node:net'
-import { load } from 'cheerio'
+import { Readability } from '@mozilla/readability'
+import { JSDOM, VirtualConsole } from 'jsdom'
 import type { SourceReader } from '../../app/ports'
 import type { Source } from '../../config/model'
 import type { Candidate, CollectionResult, EvidenceCollectionResult } from '../../domain/content'
@@ -12,7 +13,8 @@ type Document = { readonly text: string; readonly contentType: string }
 const sourceConcurrency = 4
 const evidenceConcurrency = 4
 const maximumEvidenceCharacters = 30_000
-const maximumArticleResponseBytes = 2_000_000
+const maximumReadableElements = 50_000
+const maximumArticleResponseBytes = 4_000_000
 const maximumArticleRedirects = 5
 const blockedIpv4ArticleAddresses = new BlockList()
 const blockedIpv6ArticleAddresses = new BlockList()
@@ -163,37 +165,51 @@ async function fetchArticleDocument(
 }
 
 function articleText(document: string): { readonly title?: string; readonly content?: string } {
-  const $ = load(document)
-  let structuredTitle: string | undefined
-  let structuredContent: string | undefined
-  $('script[type="application/ld+json"]').each((_, element) => {
-    if (structuredContent) return
-    try {
-      const parsed: unknown = JSON.parse($(element).text())
-      const values = Array.isArray(parsed) ? parsed : [parsed]
-      for (const value of values) {
-        if (!value || typeof value !== 'object') continue
-        const record = value as Record<string, unknown>
-        if (!/article|news|blog/i.test(String(record['@type'] ?? ''))) continue
-        if (typeof record.articleBody === 'string' && record.articleBody.trim()) {
-          structuredContent = record.articleBody.trim()
-          if (typeof record.headline === 'string' && record.headline.trim()) structuredTitle = record.headline.trim()
-          break
+  const dom = new JSDOM(document, { virtualConsole: new VirtualConsole() })
+  try {
+    const parsedDocument = dom.window.document
+    let structuredTitle: string | undefined
+    let structuredContent: string | undefined
+    for (const element of parsedDocument.querySelectorAll('script[type="application/ld+json"]')) {
+      if (structuredContent) break
+      try {
+        const parsed: unknown = JSON.parse(element.textContent || '')
+        const values = Array.isArray(parsed) ? parsed : [parsed]
+        for (const value of values) {
+          if (!value || typeof value !== 'object') continue
+          const record = value as Record<string, unknown>
+          if (!/article|news|blog/i.test(String(record['@type'] ?? ''))) continue
+          if (typeof record.articleBody === 'string' && record.articleBody.trim()) {
+            structuredContent = record.articleBody.trim()
+            if (typeof record.headline === 'string' && record.headline.trim()) structuredTitle = record.headline.trim()
+            break
+          }
         }
+      } catch {
+        // Malformed metadata falls through to the visible article text.
       }
-    } catch {
-      // Malformed metadata falls through to the visible article text.
     }
-  })
-  $('script,style,noscript,nav,footer,form').remove()
-  const visible = $('[itemprop="articleBody"],article,main').first().text().replace(/\s+/g, ' ').trim()
-  const content = (structuredContent || visible).slice(0, maximumEvidenceCharacters)
-  const title =
-    structuredTitle ||
-    $('meta[property="og:title"]').attr('content')?.trim() ||
-    $('h1').first().text().trim() ||
-    $('title').text().trim()
-  return { ...(title ? { title } : {}), ...(content ? { content } : {}) }
+    const fallbackTitle =
+      parsedDocument.querySelector('meta[property="og:title"]')?.getAttribute('content')?.trim() ||
+      parsedDocument.querySelector('h1')?.textContent?.trim() ||
+      parsedDocument.querySelector('title')?.textContent?.trim()
+    const semanticRoot = parsedDocument.querySelector('[itemprop="articleBody"], article, main')
+    for (const element of parsedDocument.querySelectorAll('script, style, noscript, nav, footer, form'))
+      element.remove()
+    const semanticContent = semanticRoot?.textContent?.replace(/\s+/g, ' ').trim()
+    const readable = new Readability(parsedDocument, {
+      charThreshold: 1,
+      maxElemsToParse: maximumReadableElements,
+    }).parse()
+    const content = (structuredContent || readable?.textContent || semanticContent || '').replace(/\s+/g, ' ').trim()
+    const title = structuredTitle || readable?.title?.trim() || fallbackTitle
+    return {
+      ...(title ? { title } : {}),
+      ...(content ? { content: content.slice(0, maximumEvidenceCharacters) } : {}),
+    }
+  } finally {
+    dom.window.close()
+  }
 }
 
 async function enrichCandidate(
