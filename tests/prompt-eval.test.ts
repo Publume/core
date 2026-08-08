@@ -29,8 +29,8 @@ describe('prompt evaluation', () => {
       reason: 'This is a fixture, not publishable information.',
       topics: [],
       risks: ['unsafe'],
-      verifiedFacts: [],
-      uncertainties: ['This is a test fixture.'],
+      claims: [],
+      uncertainties: [{ id: 'u1', text: 'This is a test fixture.', claimIds: [], sourceUrls: [] }],
       sourceUrls: [],
     })
     expect(rejection).toMatchObject({ classificationPassed: true, criticalFalsePositive: false })
@@ -41,7 +41,13 @@ describe('prompt evaluation', () => {
       reason: 'Looks important.',
       topics: ['testing'],
       risks: [],
-      verifiedFacts: ['The fixture claims a test succeeded.'],
+      claims: [
+        {
+          id: 'claim-1',
+          text: 'The fixture claims a test succeeded.',
+          sourceUrls: [fixture.candidate.canonicalUrl],
+        },
+      ],
       uncertainties: [],
       sourceUrls: [fixture.candidate.canonicalUrl],
     })
@@ -58,6 +64,7 @@ describe('prompt evaluation', () => {
       title: 'Orion 4.2 adds Linux support and fixes CVE-2026-4410',
       summary: 'Orion 4.2 adds Linux support and fixes CVE-2026-4410 for affected deployments.',
       body: 'Orion 4.2 is now available with Linux support and a fix for CVE-2026-4410. The vendor says Windows behavior is unchanged. Operators can use the release notes to determine whether their deployments are affected.',
+      blocks: [],
       sourceUrls: [evalCase.candidate.canonicalUrl],
     })
     expect(valid.passed).toBe(true)
@@ -67,6 +74,7 @@ describe('prompt evaluation', () => {
       title: 'Shocking release changes everything',
       summary: 'A release happened. You will not believe what happens next. Everyone must upgrade.',
       body: 'In conclusion, macOS performance doubled.',
+      blocks: [],
       sourceUrls: [evalCase.candidate.canonicalUrl],
     })
     expect(invalid.passed).toBe(false)

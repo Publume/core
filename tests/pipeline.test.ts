@@ -7,6 +7,7 @@ import { runPipeline } from '../src/app/pipeline'
 import type { PipelinePorts, SitePublisher } from '../src/app/ports'
 import { loadConfig } from '../src/config/load'
 import type { AppConfig } from '../src/config/model'
+import type { StoryBlock } from '../src/domain/content'
 import { emptyDecisionState } from '../src/domain/decisions'
 import { topicIdForLabel } from '../src/domain/topics'
 
@@ -37,15 +38,68 @@ function configEnv(overrides: Record<string, string> = {}): Record<string, strin
   }
 }
 
+function testBlocks(
+  sourceUrls: readonly string[],
+  markdown = 'Body with verified source context.',
+  kinds: readonly StoryBlock['kind'][] = ['summary', 'key-points'],
+  claimKind: StoryBlock['kind'] = 'summary',
+) {
+  return kinds.map((kind, index) => ({
+    id: `block-${index + 1}`,
+    kind,
+    markdown: index === 0 ? markdown : `${kind} content.`,
+    claimIds: kind === claimKind ? ['claim-1'] : [],
+    uncertaintyIds: [],
+    sourceUrls: kind === claimKind ? sourceUrls : [],
+  }))
+}
+
+type PromptStoryBlock = {
+  readonly kind: StoryBlock['kind']
+  readonly optional?: boolean
+  readonly tools?: readonly string[]
+}
+
+function promptStoryBlocks(system: string): readonly PromptStoryBlock[] {
+  const prefix = 'Follow this fixed ordered Story Block contract: '
+  const start = system.indexOf(prefix)
+  const end = system.indexOf('. Include every block', start)
+  if (start < 0 || end < 0) throw new Error('Generation prompt is missing its Story Block contract')
+  return JSON.parse(system.slice(start + prefix.length, end)) as PromptStoryBlock[]
+}
+
 function fakeAi(calls: { count: number }): AiClient {
   return {
     async complete(request) {
       calls.count += 1
       const user = JSON.parse(request.user) as {
-        story?: { reports?: { canonicalUrl: string }[] }
+        story?: {
+          reports?: { canonicalUrl: string }[]
+          sources?: { canonicalUrl: string; acquisition?: string }[]
+        }
         gate?: { sourceUrls?: string[] }
         languages?: string[]
         reports?: unknown[]
+        candidates?: unknown[]
+      }
+      if (user.candidates) {
+        const candidates = user.candidates
+        return {
+          choices: [
+            {
+              message: {
+                content: JSON.stringify({
+                  assessments: candidates.map((_, index) => ({
+                    index,
+                    score: 1 - index / Math.max(1, candidates.length),
+                    category: 'updates',
+                    reason: 'Relevant test candidate',
+                  })),
+                }),
+              },
+            },
+          ],
+        }
       }
       if (user.reports)
         return {
@@ -59,7 +113,8 @@ function fakeAi(calls: { count: number }): AiClient {
             },
           ],
         }
-      if (request.user.includes('Decide whether'))
+      if (request.user.includes('Decide whether')) {
+        const sourceUrls = user.story?.reports?.map((report) => report.canonicalUrl) ?? []
         return {
           choices: [
             {
@@ -70,14 +125,25 @@ function fakeAi(calls: { count: number }): AiClient {
                   reason: 'important',
                   topics: ['security'],
                   risks: [],
-                  verifiedFacts: ['The report contains a material security update.'],
+                  claims: [{ id: 'claim-1', text: 'The report contains a material security update.', sourceUrls }],
                   uncertainties: [],
-                  sourceUrls: user.story?.reports?.map((report) => report.canonicalUrl) ?? [],
+                  sourceUrls,
                 }),
               },
             },
           ],
         }
+      }
+      const sourceUrls = user.gate?.sourceUrls ?? []
+      const contract = promptStoryBlocks(request.system)
+      const webSearchEvidence = user.story?.sources?.some((source) => source.acquisition === 'web-search') ?? false
+      const webSearchBlock = webSearchEvidence
+        ? contract.find((block) => block.tools?.includes('web-search'))
+        : undefined
+      const emitted = contract.filter((block) => !block.optional || block === webSearchBlock)
+      const kinds = emitted.map((block) => block.kind)
+      const claimKind = webSearchBlock?.kind ?? kinds[0]
+      if (!claimKind) throw new Error('Story Block contract needs at least one emitted block')
       return {
         choices: [
           {
@@ -87,8 +153,8 @@ function fakeAi(calls: { count: number }): AiClient {
                   language,
                   title: `Article ${language}`,
                   summary: 'Summary',
-                  body: 'Body with verified source context.',
-                  sourceUrls: user.gate?.sourceUrls ?? [],
+                  blocks: testBlocks(sourceUrls, undefined, kinds, claimKind),
+                  sourceUrls,
                 })),
               }),
             },
@@ -108,7 +174,13 @@ type PortOptions = {
 
 function testPorts(config: AppConfig, options: PortOptions = {}): PipelinePorts {
   return {
-    sources: createSourceReader(config.sources.entries, config.sources.timeoutMs, options.fetchFn ?? feedFixture),
+    sources: createSourceReader(
+      config.sources.entries,
+      config.sources.timeoutMs,
+      options.fetchFn ?? feedFixture,
+      undefined,
+      config.sources.enrichmentSearchUrlTemplate,
+    ),
     editorial: createEditorial(config.editorial, options.aiClient ?? fakeAi({ count: 0 })),
     decisions: createFileDecisionStore(config.state.path),
     delivery: options.delivery ?? [],
@@ -144,7 +216,13 @@ describe('pipeline idempotence', () => {
       { mode: 'initial', allowTestSources: true },
     )
 
-    expect(result).toMatchObject({ evidenceFetched: 1, generated: 1, published: 1, targetCommitSha: 'initial-commit' })
+    expect(result).toMatchObject({
+      status: 'success',
+      evidenceFetched: 1,
+      generated: 1,
+      published: 1,
+      targetCommitSha: 'initial-commit',
+    })
     expect(calls.count).toBe(2)
     expect(publishedMode).toBe('content')
   })
@@ -206,6 +284,36 @@ describe('pipeline idempotence', () => {
 
     await expect(runPipeline(config, ports)).rejects.toThrow('collection unavailable')
     expect(closes).toBe(1)
+  })
+
+  it('fails the run when every configured source fails', async () => {
+    const root = `/tmp/publume-all-sources-failed-${Date.now()}-${Math.random()}`
+    const config = loadConfig(configEnv(), { rootDir: root })
+    const ports = testPorts(config)
+    ports.sources.collect = async () => ({
+      candidates: [],
+      errors: config.sources.entries.map((source) => ({ sourceId: source.id, error: 'unavailable' })),
+    })
+
+    await expect(runPipeline(config, ports)).rejects.toThrow('All configured sources failed')
+  })
+
+  it('fails the run when every selected candidate lacks article evidence', async () => {
+    const root = `/tmp/publume-all-evidence-failed-${Date.now()}-${Math.random()}`
+    const config = loadConfig(configEnv(), { rootDir: root })
+    const fetchFn: FetchLike = async (input) => {
+      if (String(input).endsWith('/feed.xml')) return feedFixture(input)
+      throw new Error('article unavailable')
+    }
+
+    await expect(runPipeline(config, testPorts(config, { fetchFn }), { allowTestSources: true })).rejects.toThrow(
+      'All selected candidates failed evidence collection',
+    )
+    expect(
+      Object.values((await createFileDecisionStore(config.state.path).load()).decisions).some(
+        (decision) => decision.status === 'failed' && decision.reason === 'evidence-unavailable',
+      ),
+    ).toBe(true)
   })
 
   it('prepares the target and collects sources concurrently', async () => {
@@ -292,6 +400,9 @@ describe('pipeline idempotence', () => {
         async save() {},
       },
       editorial: {
+        async admit(items) {
+          return items.map((_, index) => ({ index, score: 1, category: 'test', reason: 'Test admission' }))
+        },
         async consolidate(items) {
           return items
         },
@@ -307,7 +418,7 @@ describe('pipeline idempotence', () => {
             reason: 'important',
             topics: [],
             risks: [],
-            verifiedFacts: [`Verified candidate ${index}`],
+            claims: [{ id: 'claim-1', text: `Verified candidate ${index}`, sourceUrls: [candidate.canonicalUrl] }],
             uncertainties: [],
             sourceUrls: [candidate.canonicalUrl],
           }
@@ -322,6 +433,7 @@ describe('pipeline idempotence', () => {
               title: candidate.title,
               summary: 'Summary',
               body: 'Body',
+              blocks: testBlocks([candidate.canonicalUrl], 'Body'),
               sourceUrls: [candidate.canonicalUrl],
             },
           ]
@@ -541,7 +653,7 @@ describe('pipeline idempotence', () => {
                   reason: 'not important',
                   topics: [],
                   risks: [],
-                  verifiedFacts: [],
+                  claims: [],
                   uncertainties: [],
                   sourceUrls: [],
                 }),
@@ -565,6 +677,7 @@ describe('pipeline idempotence', () => {
     )
 
     expect(result.rejected).toBe(1)
+    expect(result.status).toBe('noop')
     expect(result.generated).toBe(0)
     expect(result.published).toBe(0)
     expect(calls).toBe(1)
@@ -628,7 +741,13 @@ describe('pipeline idempotence', () => {
                     reason: 'Two reports support the same material update',
                     topics: ['protocol'],
                     risks: [],
-                    verifiedFacts: ['The network upgrade is live.'],
+                    claims: [
+                      {
+                        id: 'claim-1',
+                        text: 'The network upgrade is live.',
+                        sourceUrls: user.story?.reports?.map((report) => report.canonicalUrl) ?? [],
+                      },
+                    ],
                     uncertainties: [],
                     sourceUrls,
                   }),
@@ -646,7 +765,10 @@ describe('pipeline idempotence', () => {
                     language,
                     title: 'Protocol upgrade launches',
                     summary: 'A material network upgrade is now live.',
-                    body: 'The source reports that the network upgrade is live.',
+                    blocks: testBlocks(
+                      user.gate?.sourceUrls ?? [],
+                      'The source reports that the network upgrade is live.',
+                    ),
                     sourceUrls: user.gate?.sourceUrls,
                   })),
                 }),
@@ -670,6 +792,39 @@ describe('pipeline idempotence', () => {
     expect(gateCalls).toBe(1)
   })
 
+  it('uses only fixed-profile, bounded enrichment when evidence is below the profile requirement', async () => {
+    const root = `/tmp/publume-enrichment-${Date.now()}-${Math.random()}`
+    const config = loadConfig(
+      configEnv({
+        SITE_TYPE: 'analysis',
+        ENRICHMENT_SEARCH_URL_TEMPLATE: 'https://search.example.test/?q={query}&format=rss',
+      }),
+      { rootDir: root },
+    )
+    const fetchFn: FetchLike = async (input) => {
+      const url = String(input)
+      if (url.startsWith('https://search.example.test/'))
+        return new Response(
+          '<?xml version="1.0"?><rss version="2.0"><channel><item><guid>related</guid><title>Independent pipeline signal</title><link>https://related.example.test/pipeline-1</link><description>Independent discovery context.</description></item></channel></rss>',
+          { headers: { 'content-type': 'application/rss+xml' } },
+        )
+      if (url === 'https://related.example.test/pipeline-1')
+        return new Response(
+          '<article><h1>Independent pipeline signal</h1><p>Independent article evidence confirms the material update.</p></article>',
+          { headers: { 'content-type': 'text/html' } },
+        )
+      return feedFixture(input)
+    }
+
+    const result = await runPipeline(config, testPorts(config, { fetchFn, aiClient: fakeAi({ count: 0 }) }), {
+      allowTestSources: true,
+    })
+
+    expect(result.enrichmentFetched).toBe(1)
+    expect(result.enrichmentErrors).toBe(0)
+    expect(result.published).toBe(1)
+  })
+
   it('blocks reserved fixture sources before AI evaluation', async () => {
     const root = `/tmp/publume-reserved-source-${Date.now()}-${Math.random()}`
     const config = loadConfig(configEnv(), { rootDir: root })
@@ -688,7 +843,7 @@ describe('pipeline idempotence', () => {
     expect(calls).toBe(0)
   })
 
-  it('processes newest candidates first and skips the rest when the run cap is reached', async () => {
+  it('processes newest candidates first without losing budget-deferred candidates', async () => {
     const root = `/tmp/publume-pipeline-cap-${Date.now()}-${Math.random()}`
     const config = loadConfig(
       configEnv({
@@ -731,14 +886,21 @@ describe('pipeline idempotence', () => {
     expect(first.collected).toBe(4)
     expect(first.skipped).toBe(1)
     expect(first.published).toBe(2)
-    expect(calls.count).toBe(5)
+    expect(calls.count).toBe(6)
     const second = await runPipeline(config, testPorts(config, { fetchFn, aiClient: fakeAi(calls) }), {
       allowTestSources: true,
       now: new Date('2026-08-05T12:15:00Z'),
     })
-    expect(second.published).toBe(0)
+    expect(second.published).toBe(1)
     expect(second.skipped).toBe(0)
-    expect(calls.count).toBe(5)
+    expect(calls.count).toBe(8)
+    const third = await runPipeline(config, testPorts(config, { fetchFn, aiClient: fakeAi(calls) }), {
+      allowTestSources: true,
+      now: new Date('2026-08-05T12:30:00Z'),
+    })
+    expect(third.status).toBe('noop')
+    expect(third.published).toBe(0)
+    expect(calls.count).toBe(8)
   })
 
   it('uses an independent checkpoint when a source is added', async () => {
@@ -780,8 +942,8 @@ describe('pipeline idempotence', () => {
     expect(result.selected).toBe(1)
     expect(result.published).toBe(1)
     expect((await decisions.load()).sourceCheckpoints).toEqual({
-      [oldSource]: '2026-08-05T12:00:00.000Z',
-      [newSource]: '2026-08-05T12:00:00.000Z',
+      [oldSource]: '2026-08-05T11:30:00.000Z',
+      [newSource]: '2026-08-05T11:00:00.000Z',
     })
   })
 
@@ -817,8 +979,9 @@ describe('pipeline idempotence', () => {
     })
 
     expect(result.sourceErrors).toBe(1)
+    expect(result.status).toBe('partial')
     const state = await decisions.load()
-    expect(state.sourceCheckpoints[goodSource]).toBe('2026-08-05T12:00:00.000Z')
+    expect(state.sourceCheckpoints[goodSource]).toBe('2026-08-05T11:00:00.000Z')
     expect(state.sourceCheckpoints[failedSource]).toBe(previousCheckpoint)
   })
 
@@ -868,11 +1031,12 @@ describe('pipeline idempotence', () => {
     })
 
     expect(result.gateEvaluated).toBe(2)
+    expect(result.status).toBe('partial')
     expect(result.failed).toBe(1)
     expect(result.published).toBe(1)
     const state = await createFileDecisionStore(config.state.path).load()
     expect(state.sourceCheckpoints[failedSource]).toBeUndefined()
-    expect(state.sourceCheckpoints[goodSource]).toBe('2026-08-05T12:00:00.000Z')
+    expect(state.sourceCheckpoints[goodSource]).toBe('2026-08-05T11:00:00.000Z')
     expect(
       Object.values(state.decisions).some(
         (decision) => decision.status === 'failed' && decision.reason === 'The operation timed out.',

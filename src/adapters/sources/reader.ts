@@ -4,7 +4,12 @@ import { Readability } from '@mozilla/readability'
 import { JSDOM, VirtualConsole } from 'jsdom'
 import type { SourceReader } from '../../app/ports'
 import type { Source } from '../../config/model'
-import type { Candidate, CollectionResult, EvidenceCollectionResult } from '../../domain/content'
+import {
+  type Candidate,
+  type CollectionResult,
+  candidateReports,
+  type EvidenceCollectionResult,
+} from '../../domain/content'
 import { discoverFeedUrl, parseFeed, parseHtml, parseJson } from './parsers'
 
 export type FetchLike = (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>
@@ -224,12 +229,24 @@ async function enrichCandidate(
     throw new Error('Article URL did not return HTML')
   const extracted = articleText(document.text)
   if (!extracted.content) throw new Error('Article page did not contain readable content')
-  return {
+  const content = extracted.content
+  const enriched = {
     ...candidate,
     title: extracted.title || candidate.title,
-    content: extracted.content,
+    content,
     contentOrigin: 'article-page',
-  }
+  } as const
+  return candidate.reports?.length
+    ? {
+        ...enriched,
+        reports: candidate.reports.map((report) => ({
+          ...report,
+          title: extracted.title || report.title,
+          content,
+          contentOrigin: 'article-page' as const,
+        })),
+      }
+    : enriched
 }
 
 async function collectEvidence(
@@ -265,11 +282,55 @@ async function collectEvidence(
   return { candidates: enriched, errors, fetched }
 }
 
+async function collectEnrichment(
+  candidates: readonly Candidate[],
+  maximumResultsPerStory: number,
+  searchUrlTemplate: string,
+  fetchFn: FetchLike,
+  timeoutMs: number,
+  resolveHostname?: ResolveHostname,
+): Promise<EvidenceCollectionResult> {
+  const enriched: Candidate[] = []
+  const errors: EvidenceCollectionResult['errors'][number][] = []
+  let fetched = 0
+  for (const candidate of candidates) {
+    const searchUrl = searchUrlTemplate.replace('{query}', encodeURIComponent(candidate.title))
+    try {
+      const discovered = await collectSource({ id: 'enrichment-web-search', url: searchUrl }, fetchFn, timeoutMs)
+      const existingUrls = new Set(candidateReports(candidate).map((report) => report.canonicalUrl))
+      const related = discovered
+        .filter((result) => !existingUrls.has(result.canonicalUrl))
+        .slice(0, maximumResultsPerStory)
+      const evidence = await collectEvidence(related, fetchFn, timeoutMs, resolveHostname)
+      fetched += evidence.fetched
+      errors.push(...evidence.errors)
+      enriched.push({
+        ...candidate,
+        reports: [
+          ...candidateReports(candidate),
+          ...evidence.candidates
+            .flatMap(candidateReports)
+            .map((report) => ({ ...report, acquisition: 'web-search' as const })),
+        ],
+      })
+    } catch (error) {
+      errors.push({
+        sourceId: 'enrichment-web-search',
+        url: searchUrl,
+        error: error instanceof Error ? error.message : String(error),
+      })
+      enriched.push(candidate)
+    }
+  }
+  return { candidates: enriched, errors, fetched }
+}
+
 export function createSourceReader(
   sources: readonly Source[],
   timeoutMs: number,
   fetchFn: FetchLike = fetch,
   resolveHostname: ResolveHostname | undefined = fetchFn === fetch ? defaultResolveHostname : undefined,
+  enrichmentSearchUrlTemplate = '',
 ): SourceReader {
   return {
     async collect(): Promise<CollectionResult> {
@@ -300,6 +361,17 @@ export function createSourceReader(
     },
     collectEvidence(candidates): Promise<EvidenceCollectionResult> {
       return collectEvidence(candidates, fetchFn, timeoutMs, resolveHostname)
+    },
+    collectEnrichment(candidates, maximumResultsPerStory): Promise<EvidenceCollectionResult> {
+      if (!enrichmentSearchUrlTemplate) return Promise.resolve({ candidates, errors: [], fetched: 0 })
+      return collectEnrichment(
+        candidates,
+        maximumResultsPerStory,
+        enrichmentSearchUrlTemplate,
+        fetchFn,
+        timeoutMs,
+        resolveHostname,
+      )
     },
   }
 }

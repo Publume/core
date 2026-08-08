@@ -23,6 +23,7 @@ const stateSchema = z
   .object({
     version: z.literal(1),
     decisions: z.record(z.string(), record),
+    processedCandidates: z.record(z.string().min(1), timestamp).optional(),
     sourceCheckpoints: z.record(z.string().min(1), timestamp).default({}),
     pendingDeliveries: z
       .array(

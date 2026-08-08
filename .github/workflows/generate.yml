@@ -34,7 +34,9 @@ jobs:
       TARGET_REPOSITORY: ${{ vars.TARGET_REPOSITORY }}
       TARGET_BRANCH: ${{ vars.TARGET_BRANCH }}
       SOURCE_URLS: ${{ vars.SOURCE_URLS }}
+      RSSHUB_BASE_URL: ${{ vars.RSSHUB_BASE_URL }}
       SOURCE_TIMEOUT_SECONDS: ${{ vars.SOURCE_TIMEOUT_SECONDS }}
+      ENRICHMENT_SEARCH_URL_TEMPLATE: ${{ vars.ENRICHMENT_SEARCH_URL_TEMPLATE }}
       CONTENT_INSTRUCTIONS: ${{ vars.CONTENT_INSTRUCTIONS }}
       GATE_PROMPT: ${{ vars.GATE_PROMPT }}
       ARTICLE_PROMPT: ${{ vars.ARTICLE_PROMPT }}
@@ -51,6 +53,7 @@ jobs:
       THEME_REPOSITORY: ${{ vars.THEME_REPOSITORY }}
       THEME_REF: ${{ vars.THEME_REF }}
       THEME: ${{ vars.THEME }}
+      SITE_TYPE: ${{ vars.SITE_TYPE }}
       SITE_URL: ${{ vars.SITE_URL }}
       SITE_NAME: ${{ vars.SITE_NAME }}
       SITE_DESCRIPTION: ${{ vars.SITE_DESCRIPTION }}

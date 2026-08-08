@@ -60,7 +60,13 @@ async function addAlternateTheme(repository: string, themeId: string): Promise<s
 
 function createPorts(config: AppConfig, fetchFn: FetchLike, aiClient: AiClient): PipelinePorts {
   return {
-    sources: createSourceReader(config.sources.entries, config.sources.timeoutMs, fetchFn),
+    sources: createSourceReader(
+      config.sources.entries,
+      config.sources.timeoutMs,
+      fetchFn,
+      undefined,
+      config.sources.enrichmentSearchUrlTemplate,
+    ),
     editorial: createEditorial(config.editorial, aiClient),
     decisions: createFileDecisionStore(config.state.path),
     delivery: [],
@@ -132,7 +138,7 @@ try {
       calls.count += 1
       const user = JSON.parse(request.user) as {
         story?: { reports?: { canonicalUrl: string; content: string }[] }
-        gate?: { sourceUrls?: string[] }
+        gate?: { sourceUrls?: string[]; claims?: { id: string }[] }
         languages?: string[]
         reports?: unknown[]
         task?: string
@@ -152,7 +158,9 @@ try {
             },
           ],
         }
-      if (user.task)
+      if (user.task) {
+        const reports = user.story?.reports ?? []
+        const sourceUrls = reports.map((report) => report.canonicalUrl)
         return {
           choices: [
             {
@@ -163,16 +171,21 @@ try {
                   reason: 'important and sourced',
                   topics: ['technology'],
                   risks: [],
-                  verifiedFacts: user.story?.reports?.map((report) => report.content) ?? [
-                    'Source-backed fixture fact.',
-                  ],
+                  claims: reports.map((report, index) => ({
+                    id: `claim-${index + 1}`,
+                    text: report.content,
+                    sourceUrls: [report.canonicalUrl],
+                  })),
                   uncertainties: [],
-                  sourceUrls: user.story?.reports?.map((report) => report.canonicalUrl) ?? [],
+                  sourceUrls,
                 }),
               },
             },
           ],
         }
+      }
+      const sourceUrls = user.gate?.sourceUrls ?? []
+      const claimIds = user.gate?.claims?.map((claim) => claim.id) ?? []
       return {
         choices: [
           {
@@ -182,8 +195,25 @@ try {
                   language,
                   title: `Validated ${language}`,
                   summary: 'Validated summary',
-                  body: 'Validated body with source-backed facts.',
-                  sourceUrls: user.gate?.sourceUrls ?? [],
+                  blocks: [
+                    {
+                      id: 'summary',
+                      kind: 'summary',
+                      markdown: 'Validated body with source-backed facts.',
+                      claimIds,
+                      uncertaintyIds: [],
+                      sourceUrls,
+                    },
+                    {
+                      id: 'points',
+                      kind: 'key-points',
+                      markdown: 'Key points.',
+                      claimIds: [],
+                      uncertaintyIds: [],
+                      sourceUrls: [],
+                    },
+                  ],
+                  sourceUrls,
                 })),
               }),
             },

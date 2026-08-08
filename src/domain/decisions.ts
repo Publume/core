@@ -20,6 +20,7 @@ export type DecisionRecord = {
 export type DecisionState = {
   readonly version: 1
   decisions: Record<string, DecisionRecord>
+  processedCandidates?: Record<string, string>
   readonly sourceCheckpoints: Record<string, string>
   pendingDeliveries: PendingDelivery[]
   configHash?: string
@@ -36,7 +37,7 @@ export type PendingDelivery = {
 }
 
 export function emptyDecisionState(): DecisionState {
-  return { version: 1, decisions: {}, sourceCheckpoints: {}, pendingDeliveries: [] }
+  return { version: 1, decisions: {}, processedCandidates: {}, sourceCheckpoints: {}, pendingDeliveries: [] }
 }
 
 export function hashValue(value: string): string {
@@ -47,6 +48,15 @@ export function makeDecisionKey(sourceId: string, externalId: string, contentHas
   return hashValue([sourceId, externalId, contentHash, configHash].join('\n'))
 }
 
+export function makeDiscoveryKey(
+  sourceId: string,
+  externalId: string,
+  canonicalUrl: string,
+  configHash: string,
+): string {
+  return hashValue([sourceId, externalId, canonicalUrl, configHash].join('\n'))
+}
+
 export function pruneDecisions(state: DecisionState, maxRecords: number): void {
   if (!Number.isInteger(maxRecords) || maxRecords < 1) throw new Error('maxRecords must be a positive integer')
   const entries = Object.entries(state.decisions).sort(([leftKey, left], [rightKey, right]) => {
@@ -54,4 +64,12 @@ export function pruneDecisions(state: DecisionState, maxRecords: number): void {
     return difference !== 0 ? difference : rightKey.localeCompare(leftKey)
   })
   state.decisions = Object.fromEntries(entries.slice(0, maxRecords))
+  state.processedCandidates = Object.fromEntries(
+    Object.entries(state.processedCandidates ?? {})
+      .sort(([leftKey, left], [rightKey, right]) => {
+        const difference = Date.parse(right) - Date.parse(left)
+        return difference !== 0 ? difference : rightKey.localeCompare(leftKey)
+      })
+      .slice(0, maxRecords),
+  )
 }

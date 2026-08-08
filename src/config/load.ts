@@ -1,6 +1,7 @@
 import path from 'node:path'
 import { z } from 'zod'
 import type { AppConfig, DeliveryChannelConfig, SiteConfig, Source } from './model'
+import { editorialProfile } from './profiles'
 
 export const DEFAULT_GATE_PROMPT = [
   'Act as the publication editor for a source-linked information site. Decide whether the candidate contains material new information for the configured audience, not merely whether it is topically related.',
@@ -144,9 +145,27 @@ function loadSources(read: EnvReader): Source[] {
   const urls = read.list('SOURCE_URLS')
   if (urls.length === 0) throw new Error('SOURCE_URLS is required')
   return urls.map((value, index) => {
-    const url = parseUrl(value, `SOURCE_URLS[${index}]`, ['https:', 'http:'])
+    let url: string
+    if (value.startsWith('rsshub://')) {
+      const route = value.slice('rsshub://'.length).replace(/^\/+/, '')
+      if (!route || /\s|#/.test(route) || route.split('/').includes('..'))
+        throw new Error(`SOURCE_URLS[${index}] contains an invalid RSSHub route`)
+      const baseUrl = parseUrl(read.required('RSSHUB_BASE_URL'), 'RSSHUB_BASE_URL', ['https:'])
+      url = new URL(route, `${baseUrl.replace(/\/$/, '')}/`).href
+    } else {
+      url = parseUrl(value, `SOURCE_URLS[${index}]`, ['https:', 'http:'])
+    }
     return { id: sourceId(url, index), url }
   })
+}
+
+function enrichmentSearchUrlTemplate(read: EnvReader): string {
+  const template = read.optional('ENRICHMENT_SEARCH_URL_TEMPLATE')
+  if (!template) return ''
+  if (template.split('{query}').length !== 2)
+    throw new Error('ENRICHMENT_SEARCH_URL_TEMPLATE must contain {query} exactly once')
+  parseUrl(template.replace('{query}', 'publume'), 'ENRICHMENT_SEARCH_URL_TEMPLATE', ['https:'])
+  return template
 }
 
 function loadSite(read: EnvReader, outputLanguages: readonly string[], defaultContentLanguage: string): SiteConfig {
@@ -234,6 +253,7 @@ export function loadConfig(env: Environment = process.env, options: { rootDir?: 
       concurrency: aiConcurrency,
     },
     editorial: {
+      profile: editorialProfile(read.optional('SITE_TYPE', 'general')),
       instructions: read.required('CONTENT_INSTRUCTIONS'),
       gatePrompt: read.optional('GATE_PROMPT', DEFAULT_GATE_PROMPT),
       articlePrompt: read.optional('ARTICLE_PROMPT', DEFAULT_ARTICLE_PROMPT),
@@ -247,6 +267,7 @@ export function loadConfig(env: Environment = process.env, options: { rootDir?: 
       maxItemAgeHours: read.number('MAX_ITEM_AGE_HOURS', 24, { min: 1, max: 24 * 365 }),
       maxCandidatesPerRun: read.number('MAX_CANDIDATES_PER_RUN', 20, { min: 1, max: 100 }),
       minimumContentLength: read.number('MINIMUM_CONTENT_LENGTH', 80, { min: 1, max: 100_000 }),
+      enrichmentSearchUrlTemplate: enrichmentSearchUrlTemplate(read),
     },
     target: {
       repository: targetRepository,

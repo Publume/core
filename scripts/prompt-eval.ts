@@ -5,6 +5,7 @@ import { createEditorial } from '../src/adapters/editorial'
 import { type AiClient, createOpenAiClient } from '../src/adapters/openai'
 import { DEFAULT_ARTICLE_PROMPT, DEFAULT_GATE_PROMPT } from '../src/config/load'
 import type { AiConfig, EditorialConfig } from '../src/config/model'
+import { editorialProfiles } from '../src/config/profiles'
 import type { Candidate, GateDecision, GeneratedArticle, PublicationReference } from '../src/domain/content'
 
 type PromptVariant = {
@@ -651,6 +652,7 @@ async function mapLimit<Input, Output>(
 
 function editorialConfig(variant: PromptVariant): EditorialConfig {
   return {
+    profile: editorialProfiles.general,
     instructions,
     gatePrompt: variant.gatePrompt,
     articlePrompt: variant.articlePrompt,
@@ -699,7 +701,13 @@ async function evaluateVariant(variant: PromptVariant, client: AiClient, concurr
         reason: 'Approved eval fixture with source-bounded facts.',
         topics: ['technology'],
         risks: [],
-        verifiedFacts: [evalCase.candidate.content],
+        claims: [
+          {
+            id: 'claim-1',
+            text: evalCase.candidate.content,
+            sourceUrls: [evalCase.candidate.canonicalUrl],
+          },
+        ],
         uncertainties: [],
         sourceUrls: [evalCase.candidate.canonicalUrl],
       }

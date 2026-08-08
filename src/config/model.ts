@@ -1,3 +1,5 @@
+import type { EditorialProfile } from './profiles'
+
 export type Source = {
   readonly id: string
   readonly url: string
@@ -15,6 +17,7 @@ export type AiConfig = {
 }
 
 export type EditorialConfig = {
+  readonly profile: EditorialProfile
   readonly instructions: string
   readonly gatePrompt: string
   readonly articlePrompt: string
@@ -29,6 +32,7 @@ export type SourceConfig = {
   readonly maxItemAgeHours: number
   readonly maxCandidatesPerRun: number
   readonly minimumContentLength: number
+  readonly enrichmentSearchUrlTemplate: string
 }
 
 export type TargetConfig = {

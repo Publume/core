@@ -98,6 +98,7 @@ TARGET_REPO_TOKEN=your-fine-grained-token
 
 SOURCE_URLS="https://source.example/feed.xml"
 CONTENT_INSTRUCTIONS="Describe the audience, subject, and publication standard."
+SITE_TYPE=general
 ```
 
 Then verify the repository and create the target site with baseline content:

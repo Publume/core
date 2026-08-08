@@ -5,6 +5,7 @@ import {
   candidateReports,
   type GateDecision,
   type GeneratedArticle,
+  type ModelCall,
   type PublicationReference,
   type SourceReport,
 } from '../domain/content'
@@ -13,20 +14,30 @@ import {
   type DecisionState,
   hashValue,
   makeDecisionKey,
+  makeDiscoveryKey,
   pruneDecisions,
 } from '../domain/decisions'
-import { candidateContentHash, isReservedTestSource, selectCandidates } from '../domain/selection'
+import {
+  candidateContentHash,
+  isReservedTestSource,
+  selectAdmittedCandidates,
+  selectCandidates,
+} from '../domain/selection'
 import { normalizeTopics } from '../domain/topics'
 import type { PipelinePorts } from './ports'
 
 export type RunSummary = {
+  status: 'success' | 'partial' | 'noop'
   collected: number
   deduplicated: number
   tooOld: number
   beforeCheckpoint: number
+  alreadyProcessed: number
   selected: number
   evidenceFetched: number
   evidenceErrors: number
+  enrichmentFetched: number
+  enrichmentErrors: number
   storyGroups: number
   reportsMerged: number
   skipped: number
@@ -42,6 +53,7 @@ export type RunSummary = {
   deliveriesDiscarded: number
   deliveriesPending: number
   sourceErrors: number
+  modelCalls: readonly ModelCall[]
   targetCommitSha?: string
 }
 
@@ -109,9 +121,11 @@ function configurationHash(config: AppConfig): string {
       threshold: config.editorial.publishThreshold,
       deduplicationContextSize: config.editorial.deduplicationContextSize,
       minimumContentLength: config.sources.minimumContentLength,
+      enrichmentSearchUrlTemplate: config.sources.enrichmentSearchUrlTemplate,
       languages: config.editorial.languages,
       instructions: config.editorial.instructions,
       prompts: { gate: config.editorial.gatePrompt, article: config.editorial.articlePrompt },
+      editorialProfile: config.editorial.profile,
       evidenceContract: 1,
     }),
   )
@@ -152,13 +166,17 @@ function recentPublications(state: DecisionState, limit: number): PublicationRef
 
 function bootstrapSummary(targetCommitSha?: string): RunSummary {
   return {
+    status: 'success',
     collected: 0,
     deduplicated: 0,
     tooOld: 0,
     beforeCheckpoint: 0,
+    alreadyProcessed: 0,
     selected: 0,
     evidenceFetched: 0,
     evidenceErrors: 0,
+    enrichmentFetched: 0,
+    enrichmentErrors: 0,
     storyGroups: 0,
     reportsMerged: 0,
     skipped: 0,
@@ -174,8 +192,17 @@ function bootstrapSummary(targetCommitSha?: string): RunSummary {
     deliveriesDiscarded: 0,
     deliveriesPending: 0,
     sourceErrors: 0,
+    modelCalls: [],
     targetCommitSha,
   }
+}
+
+function markProcessed(prepared: PreparedCandidate, context: RunContext): void {
+  context.state.processedCandidates ??= {}
+  const processedCandidates = context.state.processedCandidates
+  for (const report of prepared.reports)
+    processedCandidates[makeDiscoveryKey(report.sourceId, report.externalId, report.canonicalUrl, context.configHash)] =
+      context.updatedAt
 }
 
 function prepareCandidate(candidate: Candidate, context: RunContext): PreparedCandidate | undefined {
@@ -201,10 +228,19 @@ function prepareCandidate(candidate: Candidate, context: RunContext): PreparedCa
   else if (evidenceReports.every((report) => report.content.trim().length < config.sources.minimumContentLength))
     filterReason = 'content-too-short'
   if (filterReason) {
-    counters.filtered += 1
-    state.decisions[decisionKey] = decisionRecord(decisionKey, 'rejected', configHash, updatedAt, {
-      reason: filterReason,
-    })
+    if (filterReason === 'evidence-unavailable') {
+      counters.failed += 1
+      for (const report of reports) context.failedSources.add(report.sourceId)
+      state.decisions[decisionKey] = decisionRecord(decisionKey, 'failed', configHash, updatedAt, {
+        reason: filterReason,
+      })
+    } else {
+      counters.filtered += 1
+      state.decisions[decisionKey] = decisionRecord(decisionKey, 'rejected', configHash, updatedAt, {
+        reason: filterReason,
+      })
+      markProcessed({ candidate, decisionKey, reports }, context)
+    }
     return undefined
   }
 
@@ -238,6 +274,7 @@ function applyCandidateOutcome(outcome: CandidateOutcome, context: RunContext): 
       reason: outcome.gate.reason,
       score: outcome.gate.score,
     })
+    markProcessed(outcome.prepared, context)
     return []
   }
   if (outcome.kind === 'failed') {
@@ -379,10 +416,20 @@ async function executePipeline(config: AppConfig, ports: PipelinePorts, options:
   if (collectionResult.status === 'rejected') throw collectionResult.reason
   const publishedKeys = publishedKeysResult.value
   const collection = collectionResult.value
+  if (collection.candidates.length === 0 && collection.errors.length === config.sources.entries.length)
+    throw new Error('All configured sources failed')
   const sourceUrls = new Map(config.sources.entries.map((source) => [source.id, source.url]))
   // A configuration change starts from the recent edge again; old checkpoints describe a different editorial policy.
   const checkpoints = state.configHash && state.configHash !== configHash ? {} : state.sourceCheckpoints
-  const selection = selectCandidates(collection.candidates, sourceUrls, checkpoints, config.sources, now)
+  const selection = selectCandidates(
+    collection.candidates,
+    sourceUrls,
+    checkpoints,
+    new Set(Object.keys(state.processedCandidates ?? {})),
+    configHash,
+    config.sources,
+    now,
+  )
 
   const context: RunContext = {
     config,
@@ -399,9 +446,46 @@ async function executePipeline(config: AppConfig, ports: PipelinePorts, options:
     publicationContext: recentPublications(state, config.editorial.deduplicationContextSize),
   }
   const previousDelivery = await deliverPending(context)
-  const evidence = await ports.sources.collectEvidence(selection.candidates)
+  const admissions =
+    selection.candidatePool.length > config.sources.maxCandidatesPerRun
+      ? await ports.editorial.admit(selection.candidatePool)
+      : []
+  const selected = selectAdmittedCandidates(selection.candidatePool, admissions, config.sources.maxCandidatesPerRun)
+  const deferredSourceIds = new Set(selection.deferredSourceIds)
+  const selectedSet = new Set(selected)
+  for (const candidate of selection.candidatePool) {
+    if (selectedSet.has(candidate)) continue
+    for (const report of candidateReports(candidate)) deferredSourceIds.add(report.sourceId)
+  }
+  const evidence = await ports.sources.collectEvidence(selected)
   for (const error of evidence.errors) context.failedSources.add(error.sourceId)
-  const stories = await ports.editorial.consolidate(evidence.candidates)
+  const enrichmentTargets =
+    config.sources.enrichmentSearchUrlTemplate &&
+    config.editorial.profile.storyBlocks.some((block) => block.tools?.includes('web-search')) &&
+    ports.sources.collectEnrichment
+      ? evidence.candidates
+          .filter(
+            (candidate) =>
+              new Set(
+                candidateReports(candidate)
+                  .filter((report) => report.contentOrigin === 'article-page')
+                  .map((report) => report.canonicalUrl),
+              ).size < config.editorial.profile.minimumEvidenceSources,
+          )
+          .slice(0, config.editorial.profile.maximumEnrichedStoriesPerRun)
+      : []
+  const enrichment =
+    enrichmentTargets.length > 0 && ports.sources.collectEnrichment
+      ? await ports.sources.collectEnrichment(
+          enrichmentTargets,
+          config.editorial.profile.maximumEnrichmentResultsPerStory,
+        )
+      : { candidates: enrichmentTargets, errors: [], fetched: 0 }
+  const enrichmentByCandidate = new Map(
+    enrichmentTargets.map((candidate, index) => [candidate, enrichment.candidates[index] ?? candidate]),
+  )
+  const evidenceCandidates = evidence.candidates.map((candidate) => enrichmentByCandidate.get(candidate) ?? candidate)
+  const stories = await ports.editorial.consolidate(evidenceCandidates)
   const prepared = stories.flatMap((candidate) => {
     const item = prepareCandidate(candidate, context)
     return item ? [item] : []
@@ -411,33 +495,71 @@ async function executePipeline(config: AppConfig, ports: PipelinePorts, options:
   )
   const articles = outcomes.flatMap((outcome) => applyCandidateOutcome(outcome, context))
 
+  if (
+    selected.length > 0 &&
+    evidenceCandidates.every((candidate) =>
+      candidateReports(candidate).every((report) => report.contentOrigin !== 'article-page'),
+    )
+  ) {
+    state.configHash = configHash
+    pruneDecisions(state, config.state.maxRecords)
+    await ports.decisions.save(state)
+    throw new Error('All selected candidates failed evidence collection')
+  }
+  if (
+    context.counters.gateEvaluated > 0 &&
+    context.counters.failed === context.counters.gateEvaluated &&
+    context.counters.rejected === 0 &&
+    articles.length === 0
+  ) {
+    state.configHash = configHash
+    pruneDecisions(state, config.state.maxRecords)
+    await ports.decisions.save(state)
+    throw new Error('All selected stories failed editorial processing')
+  }
+
   if (options.mode === 'initial' && articles.length === 0)
     throw new Error(
       'Initial deployment requires at least one validated article, but no candidate passed the publication gate',
     )
 
   const commit = await publish(articles, context)
+  if (commit)
+    for (const outcome of outcomes) {
+      if (outcome.kind === 'generated') markProcessed(outcome.prepared, context)
+    }
   const currentDelivery = await deliverPending(context)
   for (const source of config.sources.entries) {
-    // The checkpoint intentionally drops unselected older candidates; each run follows the newest edge, not a backlog.
-    if (!context.failedSources.has(source.id)) state.sourceCheckpoints[source.url] = updatedAt
+    const observedThrough = selection.observedThrough.get(source.id)
+    if (observedThrough && !context.failedSources.has(source.id) && !deferredSourceIds.has(source.id))
+      state.sourceCheckpoints[source.url] = observedThrough
   }
   if (context.failedSources.size === 0) state.lastRunAt = updatedAt
   state.configHash = configHash
   pruneDecisions(state, config.state.maxRecords)
   await ports.decisions.save(state)
 
+  const partial =
+    collection.errors.length > 0 ||
+    evidence.errors.length > 0 ||
+    enrichment.errors.length > 0 ||
+    context.counters.failed > 0 ||
+    previousDelivery.failed + currentDelivery.failed > 0
   return {
+    status: partial ? 'partial' : articles.length > 0 ? 'success' : 'noop',
     collected: collection.candidates.length,
     deduplicated: selection.deduplicated,
     tooOld: selection.tooOld,
     beforeCheckpoint: selection.beforeCheckpoint,
-    selected: selection.candidates.length,
+    alreadyProcessed: selection.alreadyProcessed,
+    selected: selected.length,
     evidenceFetched: evidence.fetched,
     evidenceErrors: evidence.errors.length,
+    enrichmentFetched: enrichment.fetched,
+    enrichmentErrors: enrichment.errors.length,
     storyGroups: stories.length,
-    reportsMerged: evidence.candidates.length - stories.length,
-    skipped: selection.skipped,
+    reportsMerged: evidenceCandidates.length - stories.length,
+    skipped: Math.max(0, selection.skipped),
     ...context.counters,
     published: commit ? articles.length : 0,
     deliveriesSent: previousDelivery.sent + currentDelivery.sent,
@@ -445,6 +567,7 @@ async function executePipeline(config: AppConfig, ports: PipelinePorts, options:
     deliveriesDiscarded: previousDelivery.discarded + currentDelivery.discarded,
     deliveriesPending: state.pendingDeliveries.length,
     sourceErrors: collection.errors.length,
+    modelCalls: ports.editorial.provenance?.() ?? [],
     targetCommitSha: commit,
   }
 }

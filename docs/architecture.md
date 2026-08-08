@@ -43,15 +43,16 @@ cli
 The resulting runtime path is:
 
 1. validate environment configuration;
-2. read and normalize RSS, Atom, JSON, or HTML source indexes;
-3. deduplicate, apply recency rules, and select the newest candidates;
+2. resolve standard Feed URLs or configured `rsshub://` routes, then normalize RSS, Atom, JSON, or HTML indexes;
+3. merge equal canonical URLs, apply recency/processed-state rules, run bounded discovery admission, and balance sources and categories;
 4. fetch linked article pages only for selected candidates, retaining the source summary when full text is unavailable;
 5. consolidate reports of the same actors, event, and time frame into exhaustive, non-overlapping story groups;
-6. extract supported facts, material uncertainty, and the exact evidence source set through the publication gate;
-7. generate every language version from that approved fact and source contract, then validate it at runtime;
-8. build and push the target site through the publishing port;
-9. persist notification work before attempting configured delivery channels;
-10. atomically persist bounded decisions, source checkpoints, and pending delivery work.
+6. when the fixed profile permits it and evidence is below its minimum, query one configured search Feed and fetch only the bounded results;
+7. extract claim-level evidence, material uncertainty, and exact source references through the publication gate;
+8. generate the fixed profile's Story Blocks for every language, validate every claim/source mapping, and deterministically render Markdown;
+9. build and push the target site through the publishing port;
+10. persist notification work before attempting configured delivery channels;
+11. atomically persist bounded decisions, processed candidates, safe source checkpoints, and pending delivery work.
 
 The process owns all temporary clones and removes them after success or failure.
 There is no daemon, database, queue, or shared mutable service.
@@ -136,9 +137,12 @@ generation configuration hash. The target site is also scanned for published
 decision keys, so a lost local state file does not automatically republish
 existing content.
 
-Per-source checkpoints prevent a high-volume source from forcing future runs to
-walk progressively older material. Failed sources and candidates do not advance
-their checkpoints. The current editorial configuration fingerprint is persisted
+Canonical reports are merged before article fetches. A bounded discovery model
+scores only titles and feed excerpts; source/category caps prevent one noisy feed
+from consuming the run. Budget-deferred candidates remain unprocessed in durable
+state and are reconsidered on later runs. Per-source checkpoints advance only
+through an observed publication timestamp when that source has no deferred or
+failed candidate, so a successful run cannot silently skip backlog. The current editorial configuration fingerprint is persisted
 with the state; when it changes, Core ignores old checkpoints for one run and
 reconsiders only material that is still inside the configured age window.
 Decision history is capped by `MAX_DECISION_RECORDS`.
@@ -175,7 +179,7 @@ with no readable article page is rejected before the AI gate.
 
 Production article fetches reject credential-bearing or non-HTTP URLs, resolve
 every hostname before each request and redirect, and reject the URL when any DNS
-answer is not a public IP address. Each article response is streamed with a 2 MB
+answer is not a public IP address. Each article response is streamed with a 4 MB
 limit before the extracted evidence is reduced to the prompt-size limit.
 
 The editorial consolidator receives the selected reports once per run. Its output
@@ -185,13 +189,16 @@ underlying event in the same time frame. Follow-ups, opinions, similarly named
 products, and broad topic matches remain separate. Invalid consolidation output
 fails the run before publication instead of silently losing a report.
 
-Each story gate returns `verifiedFacts`, `uncertainties`, and `sourceUrls` in
-addition to its publication decision. A publish decision needs at least one fact
-and one source. Every URL must belong to a fetched report in that story, and
-repeated reporting is not treated as independent confirmation. Article generation
-is prompted with only the approved facts and source metadata. Runtime validation
-enforces the exact same unique source set in every language; factual adherence and
-uncertainty preservation remain model behaviors measured by prompt evaluation.
+Each story gate returns claims with stable IDs and exact supporting URLs, plus
+structured uncertainties and their claim/source references. Every URL must belong
+to a fetched report in that story, and the story-level source set must equal the
+claim-level union. Generation returns only the fixed profile's ordered Story
+Blocks. Required blocks appear exactly once; optional blocks appear only when
+distinct supplied evidence supports them. Runtime validation rejects duplicate
+or out-of-order blocks, missing required blocks, unknown claim IDs, missing claim
+mappings, incorrect block source sets, enrichment evidence in a block without
+the configured tool permission, language drift, or raw HTML. Core then joins
+block Markdown for the version 1 Theme contract.
 
 This is source-bounded evidence checking, not an independent truth oracle. Core
 can compare supplied reports and prevent unsupported synthesis; it cannot prove
@@ -202,6 +209,7 @@ or replace human review for high-stakes claims.
 
 - Invalid startup configuration fails before network access.
 - One unavailable source is reported while other sources continue.
+- All configured sources failing makes the run fail; healthy empty sources produce `noop`.
 - One unavailable article page falls back to its discovered source summary and is reported separately.
 - Invalid report consolidation fails closed before any story is published.
 - One failed AI candidate does not stop unrelated candidates.
@@ -212,6 +220,7 @@ or replace human review for high-stakes claims.
 - A notification failure leaves a bounded pending item and does not roll back an
   already published article.
 - A successful trigger may publish zero articles.
+- Returned summaries distinguish `success`, `partial`, and `noop` and include actual model-call provenance.
 
 ## Trust boundaries
 

@@ -57,6 +57,7 @@ describe('configuration and source boundaries', () => {
     expect(config.ai.allowedModels).toEqual(['test-model'])
     expect(config.ai.concurrency).toBe(4)
     expect(config.editorial.languages).toEqual(['en'])
+    expect(config.editorial.profile.id).toBe('general')
     expect(config.editorial.deduplicationContextSize).toBe(50)
     expect(config.sources.entries).toHaveLength(1)
     expect(config.sources.maxCandidatesPerRun).toBe(20)
@@ -189,9 +190,24 @@ describe('configuration and source boundaries', () => {
     )
     expect(() => loadConfig(configEnv({ AI_CONCURRENCY: '1.5' }))).toThrow('AI_CONCURRENCY must be an integer')
     expect(() => loadConfig(configEnv({ AI_CONCURRENCY: '21' }))).toThrow('AI_CONCURRENCY must be between 1 and 20')
+    expect(() => loadConfig(configEnv({ SITE_TYPE: 'unknown' }))).toThrow('Unsupported SITE_TYPE')
+    expect(() => loadConfig(configEnv({ SOURCE_URLS: 'rsshub://github/repos/DIYgod/RSSHub' }))).toThrow(
+      'RSSHUB_BASE_URL is required',
+    )
     expect(() => loadConfig(configEnv({ OUTPUT_LANGUAGES: 'en,fr', DEFAULT_CONTENT_LANGUAGE: 'de' }))).toThrow(
       'DEFAULT_CONTENT_LANGUAGE must be included in OUTPUT_LANGUAGES',
     )
+  })
+
+  it('resolves an RSSHub route through one explicitly configured instance', () => {
+    const config = loadConfig(
+      configEnv({
+        SOURCE_URLS: 'rsshub://github/repos/DIYgod/RSSHub',
+        RSSHUB_BASE_URL: 'https://rsshub.example.test/base/',
+      }),
+    )
+
+    expect(config.sources.entries[0]?.url).toBe('https://rsshub.example.test/base/github/repos/DIYgod/RSSHub')
   })
 
   it('rejects unsafe protocols in public site links', () => {
@@ -219,6 +235,43 @@ describe('configuration and source boundaries', () => {
       'json-1',
       'https://example.test/page',
     ])
+  })
+
+  it('bounds search-feed enrichment and reuses the article evidence reader', async () => {
+    const original = {
+      sourceId: 'primary',
+      externalId: 'primary-1',
+      canonicalUrl: 'https://primary.example.test/story',
+      title: 'Material network update',
+      content: 'Primary article evidence.',
+      contentOrigin: 'article-page' as const,
+    }
+    const requested: string[] = []
+    const reader = createSourceReader(
+      [],
+      20_000,
+      async (input) => {
+        const url = String(input)
+        requested.push(url)
+        if (url.startsWith('https://search.example.test/'))
+          return response(
+            '<?xml version="1.0"?><rss version="2.0"><channel><item><guid>related-1</guid><title>Related report</title><link>https://related.example.test/report</link><description>Related discovery context.</description></item></channel></rss>',
+            'application/rss+xml',
+          )
+        return response(
+          '<article><h1>Related report</h1><p>Independent article evidence for the same material update.</p></article>',
+          'text/html',
+        )
+      },
+      undefined,
+      'https://search.example.test/?q={query}&format=rss',
+    )
+
+    const result = await reader.collectEnrichment?.([original], 1)
+
+    expect(result?.fetched).toBe(1)
+    expect(result?.candidates[0]?.reports).toHaveLength(2)
+    expect(requested[0]).toContain('Material%20network%20update')
   })
 
   it('collects sources with bounded concurrency while preserving configured order and isolated failures', async () => {

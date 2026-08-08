@@ -90,6 +90,7 @@ async function main(): Promise<void> {
     ['THEME_REPOSITORY', process.env.THEME_REPOSITORY || 'Publume/themes'],
     ['THEME_REF', process.env.THEME_REF || 'main'],
     ['THEME', process.env.THEME || 'editorial'],
+    ['SITE_TYPE', process.env.SITE_TYPE || 'general'],
     ['SITE_URL', process.env.SITE_URL || ''],
     ['SITE_NAME', process.env.SITE_NAME || 'Publume Site'],
     ['SITE_DESCRIPTION', process.env.SITE_DESCRIPTION || ''],

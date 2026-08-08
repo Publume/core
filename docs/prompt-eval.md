@@ -38,6 +38,28 @@ bun run eval:prompt -- --variant=current-core
 
 The command exits non-zero when the production prompt misses a threshold. Baseline failures remain visible in the report but do not fail the command.
 
+## Editorial profile comparison
+
+Profile prompts have a separate paired evaluation:
+
+```bash
+bun run eval:profiles -- --output=/tmp/publume-profile-prompt-eval.json
+```
+
+It runs 18 gate cases and 9 article cases against both sides of the comparison:
+
+- **before:** the former generic `news`, `briefing`, and `analysis` policies,
+  mapped to the closest task for each fixture;
+- **after:** the nine current publication-task profiles on the same candidates,
+  claims, model, and runtime path.
+
+The profile evaluation passes only when every current gate classification,
+required article fact, and article rubric passes, with no critical false
+positives and no request or contract errors. The after side must not regress any
+measured quality dimension and must improve at least one.
+The JSON report stores both profile hashes, the fixture hash, per-profile
+results, and percentage-point deltas.
+
 ## Evidence boundary
 
 This evaluation measures one model configuration against a fixed synthetic dataset. It checks classification and the source-bounded gate/article output contracts, but it does not prove factual truth, exercise article-page retrieval or evaluate report grouping. It is not a substitute for production monitoring, human editorial review, or evaluation across every supported provider and language. Model, dataset hash, timestamps, per-case outputs, failures, and request duration are stored in the optional JSON report so results can be compared without treating one run as universal proof.
