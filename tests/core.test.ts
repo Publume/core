@@ -299,6 +299,32 @@ describe('configuration and source boundaries', () => {
     expect(evidence.candidates[0]?.content).toContain('dates, figures, attribution')
   })
 
+  it('fetches article hostnames that resolve only to public IPv4 addresses', async () => {
+    const requests: string[] = []
+    const reader = createSourceReader(
+      [{ id: 'news', url: 'https://news.example.org/feed.xml' }],
+      20_000,
+      async (input) => {
+        const url = String(input)
+        requests.push(url)
+        if (url.endsWith('/feed.xml'))
+          return response(
+            '<?xml version="1.0"?><rss version="2.0"><channel><item><guid>report-1</guid><title>Report</title><link>https://public.example.org/reports/1</link><description>Discovery summary.</description></item></channel></rss>',
+            'application/rss+xml',
+          )
+        return response('<article><h1>Public report</h1><p>Complete public evidence.</p></article>', 'text/html')
+      },
+      async () => ['93.184.216.34'],
+    )
+
+    const evidence = await reader.collectEvidence((await reader.collect()).candidates)
+
+    expect(requests).toEqual(['https://news.example.org/feed.xml', 'https://public.example.org/reports/1'])
+    expect(evidence.errors).toEqual([])
+    expect(evidence.fetched).toBe(1)
+    expect(evidence.candidates[0]?.contentOrigin).toBe('article-page')
+  })
+
   it('does not follow article redirects into private network addresses', async () => {
     const requests: string[] = []
     const reader = createSourceReader(

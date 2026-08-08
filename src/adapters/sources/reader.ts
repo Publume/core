@@ -14,7 +14,8 @@ const evidenceConcurrency = 4
 const maximumEvidenceCharacters = 30_000
 const maximumArticleResponseBytes = 2_000_000
 const maximumArticleRedirects = 5
-const blockedArticleAddresses = new BlockList()
+const blockedIpv4ArticleAddresses = new BlockList()
+const blockedIpv6ArticleAddresses = new BlockList()
 
 for (const [network, prefix] of [
   ['0.0.0.0', 8],
@@ -33,7 +34,7 @@ for (const [network, prefix] of [
   ['224.0.0.0', 4],
   ['240.0.0.0', 4],
 ] as const)
-  blockedArticleAddresses.addSubnet(network, prefix, 'ipv4')
+  blockedIpv4ArticleAddresses.addSubnet(network, prefix, 'ipv4')
 
 for (const [network, prefix] of [
   ['::', 128],
@@ -46,7 +47,7 @@ for (const [network, prefix] of [
   ['fec0::', 10],
   ['ff00::', 8],
 ] as const)
-  blockedArticleAddresses.addSubnet(network, prefix, 'ipv6')
+  blockedIpv6ArticleAddresses.addSubnet(network, prefix, 'ipv6')
 
 type ResolveHostname = (hostname: string) => Promise<readonly string[]>
 
@@ -78,7 +79,9 @@ async function collectSource(source: Source, fetchFn: FetchLike, timeoutMs: numb
 
 function publicIpAddress(address: string): boolean {
   const family = isIP(address)
-  return family !== 0 && !blockedArticleAddresses.check(address, family === 4 ? 'ipv4' : 'ipv6')
+  if (family === 4) return !blockedIpv4ArticleAddresses.check(address, 'ipv4')
+  if (family === 6) return !blockedIpv6ArticleAddresses.check(address, 'ipv6')
+  return false
 }
 
 async function defaultResolveHostname(hostname: string): Promise<readonly string[]> {
