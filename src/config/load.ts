@@ -172,6 +172,17 @@ function enrichmentSearchUrlTemplate(read: EnvReader): string {
   return template
 }
 
+function loadPresentation(read: EnvReader): Readonly<Record<string, unknown>> {
+  const serialized = read.optional('SITE_PRESENTATION_CONFIG', '{}')
+  if (new TextEncoder().encode(serialized).byteLength > 16_384)
+    throw new Error('SITE_PRESENTATION_CONFIG must not exceed 16384 bytes')
+  try {
+    return z.record(z.string(), z.unknown()).parse(JSON.parse(serialized))
+  } catch (error) {
+    throw new Error('SITE_PRESENTATION_CONFIG must be a valid JSON object', { cause: error })
+  }
+}
+
 function loadSite(read: EnvReader, outputLanguages: readonly string[], defaultContentLanguage: string): SiteConfig {
   const name = read.optional('SITE_NAME')
   return {
@@ -193,6 +204,7 @@ function loadSite(read: EnvReader, outputLanguages: readonly string[], defaultCo
     showScore: read.boolean('SITE_SHOW_SCORE', false),
     showSources: read.boolean('SITE_SHOW_SOURCES', true),
     footerText: read.optional('SITE_FOOTER_TEXT'),
+    presentation: loadPresentation(read),
   }
 }
 

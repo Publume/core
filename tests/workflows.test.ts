@@ -159,6 +159,8 @@ describe('GitHub workflow state boundary', () => {
     expect(generate).toContain('options: [run, initial, bootstrap]')
     expect(generate).toContain('AI_CONCURRENCY:')
     expect(generate).toContain('vars.AI_CONCURRENCY')
+    expect(generate).toContain('SITE_PRESENTATION_CONFIG:')
+    expect(generate).toContain('vars.SITE_PRESENTATION_CONFIG')
     expect(generate).toContain('bun src/cli.ts --mode="$PUBLUME_MODE"')
     expect(generate).toContain('workflow_call:')
     expect(generate).toContain('actions: read')

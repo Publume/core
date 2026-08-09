@@ -183,8 +183,13 @@ target repository:
 | `SITE_SHOW_SCORE` | `false` |
 | `SITE_SHOW_SOURCES` | `true` |
 | `SITE_FOOTER_TEXT` | empty; Themes supplies a localized default |
+| `SITE_PRESENTATION_CONFIG` | `{}`; Themes validates versioned display and advertising settings |
 
 `SITE_URL` should be the final public origin, such as `https://example.com`. It
 enables canonical URLs, social metadata, and sitemap generation. The selected
 theme owns its colors, layout width, and component geometry in `theme.css`;
 Core validates the remaining URLs, locale tags, and booleans before publishing.
+`SITE_PRESENTATION_CONFIG` is a public repository variable, not a secret. Core
+only enforces that it is a JSON object of at most 16 KiB and passes it through;
+the selected Themes release owns its versioned schema and rejects unsupported
+providers or fields.

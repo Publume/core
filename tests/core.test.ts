@@ -74,6 +74,7 @@ describe('configuration and source boundaries', () => {
     expect(config.site.outputLanguages).toEqual(['en'])
     expect(config.site.defaultContentLanguage).toBe('en')
     expect(config.site.publisherName).toBe('')
+    expect(config.site.presentation).toEqual({})
     expect(config.theme).toEqual({ repository: 'Publume/themes', ref: 'main', id: 'editorial' })
   })
 
@@ -189,6 +190,10 @@ describe('configuration and source boundaries', () => {
         SITE_SOCIAL_IMAGE_URL: 'https://cdn.example.test/social.png',
         SITE_NEWSLETTER_URL: 'https://example.test/newsletter',
         SITE_SPONSOR_URL: 'https://example.test/sponsor',
+        SITE_PRESENTATION_CONFIG: JSON.stringify({
+          schemaVersion: 1,
+          ads: { provider: 'none' },
+        }),
       }),
     )
 
@@ -204,7 +209,27 @@ describe('configuration and source boundaries', () => {
       socialImageUrl: 'https://cdn.example.test/social.png',
       newsletterUrl: 'https://example.test/newsletter',
       sponsorUrl: 'https://example.test/sponsor',
+      presentation: { schemaVersion: 1, ads: { provider: 'none' } },
     })
+  })
+
+  it('fails closed for invalid or oversized presentation configuration', () => {
+    expect(loadConfig(configEnv({ SITE_PRESENTATION_CONFIG: '   ' })).site.presentation).toEqual({})
+    expect(() => loadConfig(configEnv({ SITE_PRESENTATION_CONFIG: '[]' }))).toThrow(
+      'SITE_PRESENTATION_CONFIG must be a valid JSON object',
+    )
+    expect(() => loadConfig(configEnv({ SITE_PRESENTATION_CONFIG: '{invalid' }))).toThrow(
+      'SITE_PRESENTATION_CONFIG must be a valid JSON object',
+    )
+    expect(() =>
+      loadConfig(configEnv({ SITE_PRESENTATION_CONFIG: JSON.stringify({ value: '界'.repeat(6_000) }) })),
+    ).toThrow('SITE_PRESENTATION_CONFIG must not exceed 16384 bytes')
+  })
+
+  it('passes unknown presentation versions through without interpreting them', () => {
+    const presentation = { schemaVersion: 99, future: { mode: 'reserved', values: [1, true, null] } }
+    const config = loadConfig(configEnv({ SITE_PRESENTATION_CONFIG: JSON.stringify(presentation) }))
+    expect(config.site.presentation).toEqual(presentation)
   })
 
   it('fails closed for missing audience instructions or an unapproved model', () => {

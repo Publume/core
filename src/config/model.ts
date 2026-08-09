@@ -108,6 +108,7 @@ export type SiteConfig = {
   readonly showScore: boolean
   readonly showSources: boolean
   readonly footerText: string
+  readonly presentation: Readonly<Record<string, unknown>>
 }
 
 export type AppConfig = {

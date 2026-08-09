@@ -234,6 +234,14 @@ try {
       OUTPUT_LANGUAGES: 'en,fr',
       DEFAULT_CONTENT_LANGUAGE: 'fr',
       SITE_LOCALE: 'zh-CN',
+      SITE_PRESENTATION_CONFIG: JSON.stringify({
+        schemaVersion: 1,
+        ads: {
+          provider: 'adsense',
+          publisherId: 'ca-pub-1234567890123456',
+          slots: { homeAfterFeed: '1001', archiveInline: '1002', articleEnd: '1003' },
+        },
+      }),
       PUBLISH_THRESHOLD: '0.75',
       MINIMUM_CONTENT_LENGTH: '40',
       THEME_REPOSITORY: themeRepository,
@@ -297,6 +305,11 @@ try {
     theme?: string
   }
   if (marker.schemaVersion !== 1 || marker.theme !== themeId) throw new Error('Publume site marker is invalid')
+  const generatedSiteConfig = JSON.parse(
+    await readFile(path.join(checkout, 'src/data/site-config.generated.json'), 'utf8'),
+  ) as { presentation?: unknown }
+  if (JSON.stringify(generatedSiteConfig.presentation) !== JSON.stringify(config.site.presentation))
+    throw new Error('presentation configuration did not pass through to the generated site')
 
   if (themeSource) {
     await command(['bun', 'install', '--frozen-lockfile'], checkout)
@@ -304,6 +317,19 @@ try {
     const indexHtml = await readFile(path.join(checkout, 'dist/index.html'), 'utf8')
     if (!indexHtml.includes('https://example.test/publication/'))
       throw new Error('real theme output is missing the configured canonical site URL')
+    if (
+      !indexHtml.includes('data-ad-placement="homeAfterFeed"') ||
+      (indexHtml.match(/pagead2\.googlesyndication\.com/g) ?? []).length !== 1
+    )
+      throw new Error('real theme output is missing the configured homepage advertising placement')
+    const archiveHtml = await readFile(path.join(checkout, 'dist/archive/index.html'), 'utf8')
+    if (!archiveHtml.includes('data-ad-placement="archiveInline"'))
+      throw new Error('real theme output is missing the configured archive advertising placement')
+    if (
+      (await readFile(path.join(checkout, 'dist/ads.txt'), 'utf8')) !==
+      'google.com, pub-1234567890123456, DIRECT, f08c47fec0942fa0\n'
+    )
+      throw new Error('real theme output is missing the configured ads.txt publisher record')
     if (!indexHtml.includes('/publication/rss.xml'))
       throw new Error('real theme output does not preserve the configured repository base path')
     if (!indexHtml.includes('Validated fr') || indexHtml.includes('Validated en'))
@@ -333,6 +359,8 @@ try {
     const articleOutput = articleFile.replace('src/content/articles/', 'dist/').replace(/\.md$/, '/index.html')
     const articleMarkdown = await readFile(path.join(checkout, articleFile), 'utf8')
     const articleHtml = await readFile(path.join(checkout, articleOutput), 'utf8')
+    if (!articleHtml.includes('data-ad-placement="articleEnd"'))
+      throw new Error('real theme article is missing the configured end placement')
     const sourceLiteral = articleMarkdown.match(/^\s+-\s+("https?:\/\/[^\n]+")\s*$/m)?.[1]
     const sourceUrl = sourceLiteral ? (JSON.parse(sourceLiteral) as unknown) : undefined
     if (typeof sourceUrl !== 'string' || !articleHtml.includes(sourceUrl))

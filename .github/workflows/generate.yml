@@ -74,6 +74,7 @@ jobs:
       SITE_SHOW_SCORE: ${{ vars.SITE_SHOW_SCORE }}
       SITE_SHOW_SOURCES: ${{ vars.SITE_SHOW_SOURCES }}
       SITE_FOOTER_TEXT: ${{ vars.SITE_FOOTER_TEXT }}
+      SITE_PRESENTATION_CONFIG: ${{ vars.SITE_PRESENTATION_CONFIG }}
     steps:
       - uses: actions/checkout@v7
         with:
