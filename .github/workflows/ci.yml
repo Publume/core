@@ -2,7 +2,7 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches: [main, preview]
   pull_request:
 
 concurrency:
@@ -27,6 +27,7 @@ jobs:
         uses: actions/checkout@v7
         with:
           repository: Publume/themes
+          ref: ${{ github.event_name == 'pull_request' && github.base_ref || github.ref_name }}
           path: .contract/themes
       - name: Verify the real theme contract
         env:
