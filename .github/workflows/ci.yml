@@ -27,7 +27,7 @@ jobs:
         uses: actions/checkout@v7
         with:
           repository: Publume/themes
-          ref: ${{ github.event_name == 'pull_request' && github.base_ref || github.ref_name }}
+          ref: ${{ vars.THEME_REF || github.base_ref || github.ref_name }}
           path: .contract/themes
       - name: Verify the real theme contract
         env:

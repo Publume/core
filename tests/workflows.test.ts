@@ -140,12 +140,14 @@ describe('GitHub workflow state boundary', () => {
   })
 
   test('keeps each operation serialized, scopes secrets, and verifies upgrades', async () => {
+    const ci = await readFile(path.join(root, '.github/workflows/ci.yml'), 'utf8')
     const generate = await readFile(path.join(root, '.github/workflows/generate.yml'), 'utf8')
     const schedule = await readFile(path.join(root, '.github/workflows/schedule.yml'), 'utf8')
     const upgrade = await readFile(path.join(root, '.github/workflows/upgrade.yml'), 'utf8')
     const scheduler = await readFile(path.join(root, 'scheduler/wrangler.toml'), 'utf8')
 
     expect(generate).toContain('group: publume-generate')
+    expect(ci).toContain(`ref: \${{ vars.THEME_REF || github.base_ref || github.ref_name }}`)
     expect(upgrade).toContain('group: publume-upgrade')
     for (const workflow of [generate, upgrade]) expect(workflow).toContain('persist-credentials: false')
     expect(generate.indexOf(`AI_API_KEY: \${{ secrets.AI_API_KEY }}`)).toBeGreaterThan(
