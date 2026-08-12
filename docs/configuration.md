@@ -44,12 +44,27 @@ the site workflow.
 | `AI_MODEL` | yes | - | Model used for gating and generation. |
 | `AI_ALLOWED_MODELS` | no | `AI_MODEL` | Comma- or newline-separated model allowlist. |
 | `AI_RESPONSE_FORMAT` | no | `json_object` | `json_object` or `json_schema`. |
+| `AI_REASONING_CONFIG` | no | provider default | Validated JSON binding an exact provider/model to its reasoning protocol and value. |
 | `AI_TIMEOUT_SECONDS` | no | `60` | Per-request timeout from 1 to 600 seconds. |
 | `AI_CONCURRENCY` | no | `4` | Maximum concurrent gate or article-generation requests, from 1 to 20. |
 
-Transient timeouts and HTTP 429, 502, or 503 responses are retried twice. Core
-does not silently switch models. Every logical call reports the requested and
-actual response model, attempt count, status, and available token usage in
+Core does not infer reasoning support from the provider label. Managed deployments
+set one of the validated protocols below only for exact provider and model combinations known to accept it.
+Every non-empty configuration must repeat `AI_PROVIDER` and `AI_MODEL`; Core rejects a mismatch before
+making a request. `provider-default` intentionally sends no reasoning field. Standalone deployments must
+verify the exact provider/model contract before setting another protocol.
+
+```json
+{"provider":"custom","model":"custom-model","protocol":"provider-default"}
+{"provider":"deepseek","model":"deepseek-v4-flash","protocol":"thinking","type":"disabled"}
+{"provider":"stepfun","model":"step-3.5-flash-2603","protocol":"reasoning-effort","effort":"low"}
+{"provider":"openrouter","model":"~anthropic/claude-sonnet-latest","protocol":"reasoning","value":{"enabled":false}}
+{"provider":"dashscope","model":"qwen-flash","protocol":"enable-thinking","enabled":false}
+```
+
+HTTP 429, 502, and 503 responses are retried twice. A timeout is not retried because the provider may
+still complete and bill the first request. Core does not silently switch models.
+Every logical call reports the requested and actual response model, attempt count, status, and available token usage in
 `modelCalls`. Invalid JSON/schema output receives one representation-only repair
 request; evidence and domain validation failures are never repaired into success.
 

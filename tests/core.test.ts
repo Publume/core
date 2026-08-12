@@ -55,6 +55,7 @@ describe('configuration and source boundaries', () => {
     const config = loadConfig(configEnv(), { rootDir: '/tmp/publume-test' })
     expect(config.ai.model).toBe('test-model')
     expect(config.ai.allowedModels).toEqual(['test-model'])
+    expect(config.ai.reasoning).toBeUndefined()
     expect(config.ai.concurrency).toBe(4)
     expect(config.editorial.languages).toEqual(['en'])
     expect(config.editorial.profile.id).toBe('general')
@@ -76,6 +77,50 @@ describe('configuration and source boundaries', () => {
     expect(config.site.publisherName).toBe('')
     expect(config.site.presentation).toEqual({})
     expect(config.theme).toEqual({ repository: 'Publume/themes', ref: 'main', id: 'editorial' })
+  })
+
+  it('parses an identity-bound reasoning protocol and rejects provider or model mismatches', () => {
+    const defaults = loadConfig(
+      configEnv({
+        AI_PROVIDER: 'deepseek',
+        AI_BASE_URL: 'https://api.deepseek.com/v1',
+        AI_MODEL: 'deepseek-v4-flash',
+      }),
+    )
+    const configured = loadConfig(
+      configEnv({
+        AI_PROVIDER: 'deepseek',
+        AI_BASE_URL: 'https://api.deepseek.com/v1',
+        AI_MODEL: 'deepseek-v4-flash',
+        AI_REASONING_CONFIG:
+          '{"provider":"deepseek","model":"deepseek-v4-flash","protocol":"thinking","type":"disabled"}',
+      }),
+    )
+    expect(defaults.ai.reasoning).toBeUndefined()
+    expect(configured.ai.reasoning).toEqual({
+      provider: 'deepseek',
+      model: 'deepseek-v4-flash',
+      protocol: 'thinking',
+      type: 'disabled',
+    })
+    expect(() => loadConfig(configEnv({ AI_REASONING_CONFIG: '{"protocol":"unknown"}' }))).toThrow(
+      'AI_REASONING_CONFIG must be a valid supported reasoning configuration',
+    )
+    expect(() =>
+      loadConfig(
+        configEnv({
+          AI_REASONING_CONFIG: '{"provider":"different-provider","model":"test-model","protocol":"provider-default"}',
+        }),
+      ),
+    ).toThrow('AI_REASONING_CONFIG must match AI_PROVIDER and AI_MODEL')
+    expect(() =>
+      loadConfig(
+        configEnv({
+          AI_REASONING_CONFIG:
+            '{"provider":"openai-compatible","model":"different-model","protocol":"provider-default"}',
+        }),
+      ),
+    ).toThrow('AI_REASONING_CONFIG must match AI_PROVIDER and AI_MODEL')
   })
 
   it('appends configured editorial guidance without replacing the Core defaults', () => {

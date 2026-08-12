@@ -1066,6 +1066,7 @@ describe('pipeline idempotence', () => {
       )
     }
     const successfulAi = fakeAi({ count: 0 })
+    let failedGateCalls = 0
     const aiClient: AiClient = {
       async complete(request) {
         const user = JSON.parse(request.user) as { reports?: unknown[] }
@@ -1081,25 +1082,49 @@ describe('pipeline idempotence', () => {
               },
             ],
           }
-        if (request.user.includes('gate-failed')) throw new DOMException('The operation timed out.', 'TimeoutError')
+        if (request.user.includes('gate-failed')) {
+          failedGateCalls += 1
+          throw new DOMException('The operation timed out.', 'TimeoutError')
+        }
         return successfulAi.complete(request)
       },
     }
-    const result = await runPipeline(config, testPorts(config, { fetchFn, aiClient }), {
+    const ports = testPorts(config, { fetchFn, aiClient })
+    const first = await runPipeline(config, ports, {
       allowTestSources: true,
       now: new Date('2026-08-05T12:00:00.000Z'),
     })
 
-    expect(result.gateEvaluated).toBe(2)
-    expect(result.status).toBe('partial')
-    expect(result.failed).toBe(1)
-    expect(result.published).toBe(1)
+    expect(first.gateEvaluated).toBe(2)
+    expect(first.status).toBe('partial')
+    expect(first.failed).toBe(1)
+    expect(first.published).toBe(1)
     const state = await createFileDecisionStore(config.state.path).load()
     expect(state.sourceCheckpoints[failedSource]).toBeUndefined()
     expect(state.sourceCheckpoints[goodSource]).toBe('2026-08-05T11:00:00.000Z')
     expect(
       Object.values(state.decisions).some(
         (decision) => decision.status === 'failed' && decision.reason === 'The operation timed out.',
+      ),
+    ).toBe(true)
+
+    const second = await runPipeline(config, ports, {
+      allowTestSources: true,
+      now: new Date('2026-08-05T13:00:00.000Z'),
+    })
+    const third = await runPipeline(config, ports, {
+      allowTestSources: true,
+      now: new Date('2026-08-05T14:00:00.000Z'),
+    })
+
+    expect(second).toMatchObject({ status: 'partial', gateEvaluated: 1, failed: 1 })
+    expect(third).toMatchObject({ status: 'noop', gateEvaluated: 0, failed: 0 })
+    expect(failedGateCalls).toBe(2)
+    const exhaustedState = await createFileDecisionStore(config.state.path).load()
+    expect(exhaustedState.sourceCheckpoints[failedSource]).toBe('2026-08-05T11:00:00.000Z')
+    expect(
+      Object.values(exhaustedState.decisions).some(
+        (decision) => decision.status === 'failed' && decision.modelFailureCount === 2,
       ),
     ).toBe(true)
   })

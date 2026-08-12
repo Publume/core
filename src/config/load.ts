@@ -1,6 +1,6 @@
 import path from 'node:path'
 import { z } from 'zod'
-import type { AppConfig, DeliveryChannelConfig, SiteConfig, Source } from './model'
+import type { AiReasoningConfig, AppConfig, DeliveryChannelConfig, SiteConfig, Source } from './model'
 import { editorialProfile } from './profiles'
 
 export const DEFAULT_GATE_PROMPT = [
@@ -128,6 +128,46 @@ class EnvReader {
   }
 }
 
+const reasoningEffortSchema = z.enum(['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max', 'default'])
+const reasoningIdentitySchema = {
+  provider: z.string().min(1),
+  model: z.string().min(1),
+} as const
+const aiReasoningConfigSchema = z.discriminatedUnion('protocol', [
+  z.object({ ...reasoningIdentitySchema, protocol: z.literal('provider-default') }).strict(),
+  z
+    .object({ ...reasoningIdentitySchema, protocol: z.literal('thinking'), type: z.enum(['enabled', 'disabled']) })
+    .strict(),
+  z
+    .object({ ...reasoningIdentitySchema, protocol: z.literal('reasoning-effort'), effort: reasoningEffortSchema })
+    .strict(),
+  z
+    .object({
+      ...reasoningIdentitySchema,
+      protocol: z.literal('reasoning'),
+      value: z.union([
+        z.object({ enabled: z.boolean() }).strict(),
+        z.object({ effort: reasoningEffortSchema }).strict(),
+      ]),
+    })
+    .strict(),
+  z.object({ ...reasoningIdentitySchema, protocol: z.literal('enable-thinking'), enabled: z.boolean() }).strict(),
+])
+
+function loadReasoningConfig(read: EnvReader, provider: string, model: string): AiReasoningConfig | undefined {
+  const serialized = read.optional('AI_REASONING_CONFIG')
+  if (!serialized) return undefined
+  let config: AiReasoningConfig
+  try {
+    config = aiReasoningConfigSchema.parse(JSON.parse(serialized))
+  } catch (error) {
+    throw new Error('AI_REASONING_CONFIG must be a valid supported reasoning configuration', { cause: error })
+  }
+  if (config.provider !== provider || config.model !== model)
+    throw new Error('AI_REASONING_CONFIG must match AI_PROVIDER and AI_MODEL')
+  return config
+}
+
 function parseUrl(value: string, name: string, protocols: readonly string[]): string {
   if (!value) return ''
   let url: URL
@@ -233,10 +273,13 @@ function isGitHubRepository(repository: string): boolean {
 
 export function loadConfig(env: Environment = process.env, options: { rootDir?: string } = {}): AppConfig {
   const read = new EnvReader(env)
+  const provider = read.required('AI_PROVIDER')
   const model = read.required('AI_MODEL')
   const allowedModels = read.list('AI_ALLOWED_MODELS')
   const modelAllowlist = allowedModels.length > 0 ? allowedModels : [model]
   if (!modelAllowlist.includes(model)) throw new Error(`AI_MODEL ${model} is not in AI_ALLOWED_MODELS`)
+
+  const reasoning = loadReasoningConfig(read, provider, model)
 
   const languages = read.list('OUTPUT_LANGUAGES')
   const outputLanguages = languages.length > 0 ? languages : ['en']
@@ -262,12 +305,13 @@ export function loadConfig(env: Environment = process.env, options: { rootDir?: 
 
   return {
     ai: {
-      provider: read.required('AI_PROVIDER'),
+      provider,
       apiKey: read.required('AI_API_KEY'),
       baseUrl: read.url('AI_BASE_URL', ['https:', 'http:'], true).replace(/\/$/, ''),
       model,
       allowedModels: modelAllowlist,
       responseFormat,
+      ...(reasoning ? { reasoning } : {}),
       timeoutMs: read.number('AI_TIMEOUT_SECONDS', 60, { min: 1, max: 600 }) * 1_000,
       concurrency: aiConcurrency,
     },

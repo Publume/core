@@ -105,6 +105,8 @@ type CandidateOutcome =
     }
   | { readonly kind: 'failed'; readonly prepared: PreparedCandidate; readonly reason: string }
 
+const maximumModelCandidateAttempts = 2
+
 const emptyCounters = (): Counters => ({
   alreadyDecided: 0,
   filtered: 0,
@@ -138,7 +140,10 @@ function decisionRecord(
   status: DecisionRecord['status'],
   configHash: string,
   updatedAt: string,
-  details: Pick<DecisionRecord, 'reason' | 'score' | 'targetCommitSha' | 'candidateTitle' | 'canonicalUrl'> = {},
+  details: Pick<
+    DecisionRecord,
+    'reason' | 'score' | 'targetCommitSha' | 'candidateTitle' | 'canonicalUrl' | 'modelFailureCount'
+  > = {},
 ): DecisionRecord {
   return { decisionKey, status, configHash, updatedAt, ...details }
 }
@@ -282,10 +287,14 @@ function applyCandidateOutcome(outcome: CandidateOutcome, context: RunContext): 
   }
   if (outcome.kind === 'failed') {
     counters.failed += 1
-    for (const report of reports) failedSources.add(report.sourceId)
+    const modelFailureCount = (state.decisions[decisionKey]?.modelFailureCount ?? 0) + 1
     state.decisions[decisionKey] = decisionRecord(decisionKey, 'failed', configHash, updatedAt, {
       reason: outcome.reason,
+      modelFailureCount,
     })
+    if (modelFailureCount < maximumModelCandidateAttempts)
+      for (const report of reports) failedSources.add(report.sourceId)
+    else markProcessed(outcome.prepared, context)
     return []
   }
 

@@ -14,6 +14,7 @@ const config: AiConfig = {
 }
 
 const request = { operation: 'gate' as const, system: 'system', user: 'user' }
+const reasoningIdentity = { provider: config.provider, model: config.model } as const
 
 describe('OpenAI-compatible reliability boundary', () => {
   it('retries only capped transient failures and records actual model usage', async () => {
@@ -62,5 +63,66 @@ describe('OpenAI-compatible reliability boundary', () => {
     await expect(client.complete(request)).rejects.toThrow('HTTP 400')
     expect(attempts).toBe(1)
     expect(client.provenance?.()[0]).toMatchObject({ status: 'failed', attempts: 1 })
+  })
+
+  it('does not retry a timeout with an uncertain billable outcome', async () => {
+    let attempts = 0
+    const client = createOpenAiClient(config, async () => {
+      attempts += 1
+      throw new DOMException('The operation timed out.', 'TimeoutError')
+    })
+
+    await expect(client.complete(request)).rejects.toThrow('timed out')
+    expect(attempts).toBe(1)
+    expect(client.provenance?.()[0]).toMatchObject({ status: 'failed', attempts: 1 })
+  })
+
+  it('maps each supported reasoning protocol to its exact provider request field', async () => {
+    const bodies: unknown[] = []
+    const fetchFn = async (_input: RequestInfo | URL, init?: RequestInit) => {
+      bodies.push(JSON.parse(String(init?.body)) as unknown)
+      return Response.json({ choices: [] })
+    }
+
+    await createOpenAiClient(
+      { ...config, reasoning: { ...reasoningIdentity, protocol: 'thinking', type: 'disabled' } },
+      fetchFn,
+    ).complete(request)
+    await createOpenAiClient(
+      { ...config, reasoning: { ...reasoningIdentity, protocol: 'reasoning-effort', effort: 'low' } },
+      fetchFn,
+    ).complete(request)
+    await createOpenAiClient(
+      { ...config, reasoning: { ...reasoningIdentity, protocol: 'reasoning', value: { enabled: false } } },
+      fetchFn,
+    ).complete(request)
+    await createOpenAiClient(
+      { ...config, reasoning: { ...reasoningIdentity, protocol: 'enable-thinking', enabled: false } },
+      fetchFn,
+    ).complete(request)
+    await createOpenAiClient(
+      { ...config, reasoning: { ...reasoningIdentity, protocol: 'provider-default' } },
+      fetchFn,
+    ).complete(request)
+    await createOpenAiClient(config, fetchFn).complete(request)
+
+    expect(bodies).toEqual([
+      expect.objectContaining({ thinking: { type: 'disabled' } }),
+      expect.objectContaining({ reasoning_effort: 'low' }),
+      expect.objectContaining({ reasoning: { enabled: false } }),
+      expect.objectContaining({ enable_thinking: false }),
+      expect.not.objectContaining({
+        thinking: expect.anything(),
+        reasoning_effort: expect.anything(),
+        reasoning: expect.anything(),
+        enable_thinking: expect.anything(),
+      }),
+      expect.not.objectContaining({
+        thinking: expect.anything(),
+        reasoning_effort: expect.anything(),
+        reasoning: expect.anything(),
+        enable_thinking: expect.anything(),
+      }),
+    ])
   })
 })

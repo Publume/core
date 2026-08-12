@@ -13,3 +13,9 @@ The project follows [Semantic Versioning](https://semver.org/) after 1.0. Before
 - Versioned theme and target repository marker contracts.
 - Bounded decision state and per-source checkpoints.
 - GitHub Actions and optional Cloudflare Worker scheduling.
+
+### Fixed
+
+- Support identity-bound, model-compatible reasoning protocols across managed AI providers,
+  avoid retrying uncertain billable timeouts, and bound repeated AI candidate failures
+  across scheduled runs.

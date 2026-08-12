@@ -5,6 +5,25 @@ export type Source = {
   readonly url: string
 }
 
+export type ReasoningEffort = 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max' | 'default'
+
+type AiReasoningIdentity = {
+  readonly provider: string
+  readonly model: string
+}
+
+export type AiReasoningConfig = AiReasoningIdentity &
+  (
+    | { readonly protocol: 'provider-default' }
+    | { readonly protocol: 'thinking'; readonly type: 'enabled' | 'disabled' }
+    | { readonly protocol: 'reasoning-effort'; readonly effort: ReasoningEffort }
+    | {
+        readonly protocol: 'reasoning'
+        readonly value: { readonly enabled: boolean } | { readonly effort: ReasoningEffort }
+      }
+    | { readonly protocol: 'enable-thinking'; readonly enabled: boolean }
+  )
+
 export type AiConfig = {
   readonly provider: string
   readonly apiKey: string
@@ -12,6 +31,7 @@ export type AiConfig = {
   readonly model: string
   readonly allowedModels: readonly string[]
   readonly responseFormat: 'json_object' | 'json_schema'
+  readonly reasoning?: AiReasoningConfig
   readonly timeoutMs: number
   readonly concurrency: number
 }

@@ -28,10 +28,25 @@ class AiHttpError extends Error {
 }
 
 function transientFailure(error: unknown): boolean {
-  return (
-    (error instanceof AiHttpError && [429, 502, 503].includes(error.status)) ||
-    (error instanceof DOMException && ['AbortError', 'TimeoutError'].includes(error.name))
-  )
+  return error instanceof AiHttpError && [429, 502, 503].includes(error.status)
+}
+
+function reasoningRequestOptions(reasoning: AiConfig['reasoning']): Readonly<Record<string, unknown>> {
+  if (!reasoning || reasoning.protocol === 'provider-default') return {}
+  switch (reasoning.protocol) {
+    case 'thinking':
+      return { thinking: { type: reasoning.type } }
+    case 'reasoning-effort':
+      return { reasoning_effort: reasoning.effort }
+    case 'reasoning':
+      return { reasoning: reasoning.value }
+    case 'enable-thinking':
+      return { enable_thinking: reasoning.enabled }
+    default: {
+      const unsupported: never = reasoning
+      return unsupported
+    }
+  }
 }
 
 function responseProvenance(value: unknown, request: AiRequest, config: AiConfig, attempts: number): AiCallProvenance {
@@ -89,6 +104,7 @@ export function createOpenAiClient(
                         schema: { type: 'object', additionalProperties: true },
                       },
                     },
+              ...reasoningRequestOptions(config.reasoning),
             }),
             signal: AbortSignal.timeout(config.timeoutMs),
           })

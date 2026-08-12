@@ -68,7 +68,11 @@ source or AI request is made.
 
 The AI boundary currently supports APIs compatible with OpenAI chat completions.
 Provider names are labels; `AI_BASE_URL`, `AI_MODEL`, and the allowlist determine
-the actual endpoint and model.
+the actual endpoint and model. `AI_REASONING_CONFIG` is a closed, validated protocol
+union bound to the selected provider/model and maps to exactly one provider field
+(`thinking`, `reasoning_effort`, `reasoning`, or `enable_thinking`). Core rejects
+identity mismatches before making a request. `provider-default` and an absent
+configuration send none of those fields.
 
 ## Theme contract
 
@@ -146,8 +150,11 @@ scores only titles and feed excerpts; source/category caps prevent one noisy fee
 from consuming the run. Budget-deferred candidates remain unprocessed in durable
 state and are reconsidered on later runs. Per-source checkpoints advance only
 through an observed publication timestamp when that source has no deferred or
-failed candidate, so a successful run cannot silently skip backlog. The current editorial configuration fingerprint is persisted
-with the state; when it changes, Core ignores old checkpoints for one run and
+retryable failed candidate, so a successful run cannot silently skip backlog. AI
+candidate failures are attempted in at most two runs; an exhausted candidate is
+recorded and marked processed so it cannot consume an unbounded model budget. The
+current editorial configuration fingerprint is persisted with the state; when it
+changes, Core ignores old checkpoints for one run and
 reconsiders only material that is still inside the configured age window.
 Decision history is capped by `MAX_DECISION_RECORDS`.
 
@@ -217,6 +224,7 @@ or replace human review for high-stakes claims.
 - One unavailable article page falls back to its discovered source summary and is reported separately.
 - Invalid report consolidation fails closed before any story is published.
 - One failed AI candidate does not stop unrelated candidates.
+- One AI candidate is attempted in at most two runs before its failure becomes terminal.
 - AI output that fails schema, language, source, or unsafe-markup validation is
   rejected.
 - A target build or push failure marks generated decisions as failed and exits

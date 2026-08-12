@@ -16,6 +16,7 @@ const record = z
     targetCommitSha: z.string().min(1).optional(),
     candidateTitle: z.string().min(1).optional(),
     canonicalUrl: z.url().optional(),
+    modelFailureCount: z.number().int().positive().optional(),
   })
   .strict()
 

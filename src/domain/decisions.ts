@@ -15,6 +15,7 @@ export type DecisionRecord = {
   readonly targetCommitSha?: string
   readonly candidateTitle?: string
   readonly canonicalUrl?: string
+  readonly modelFailureCount?: number
 }
 
 export type DecisionState = {
