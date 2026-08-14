@@ -20,11 +20,21 @@ type Document = { readonly text: string; readonly contentType: string }
 const sourceConcurrency = 4
 const evidenceConcurrency = 4
 const maximumEvidenceCharacters = 30_000
+const evidenceOmissionMarker = '\n\n[evidence omitted]\n\n'
 const maximumReadableElements = 50_000
 const maximumArticleResponseBytes = 4_000_000
 const maximumArticleRedirects = 5
 const blockedIpv4ArticleAddresses = new BlockList()
 const blockedIpv6ArticleAddresses = new BlockList()
+
+function boundedArticleEvidence(content: string): string {
+  if (content.length <= maximumEvidenceCharacters) return content
+  const availableCharacters = maximumEvidenceCharacters - evidenceOmissionMarker.length
+  const leadingCharacters = Math.ceil(availableCharacters / 2)
+  return `${content.slice(0, leadingCharacters)}${evidenceOmissionMarker}${content.slice(
+    -(availableCharacters - leadingCharacters),
+  )}`
+}
 
 for (const [network, prefix] of [
   ['0.0.0.0', 8],
@@ -218,7 +228,7 @@ function articleText(document: string): { readonly title?: string; readonly cont
     const title = structuredTitle || readable?.title?.trim() || fallbackTitle
     return {
       ...(title ? { title } : {}),
-      ...(content ? { content: content.slice(0, maximumEvidenceCharacters) } : {}),
+      ...(content ? { content: boundedArticleEvidence(content) } : {}),
     }
   } finally {
     dom.window.close()
