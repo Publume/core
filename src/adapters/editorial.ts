@@ -97,6 +97,7 @@ type GeneratedArticlePayload = z.infer<typeof articleSchema>
 const maximumConsolidationExcerptCharacters = 1_000
 const maximumGateEvidenceCharacters = 80_000
 const maximumGateReportCharacters = 12_000
+const evidenceOmissionMarker = '\n\n[evidence omitted]\n\n'
 const blockingRisks = new Set([
   'block',
   'duplicate',
@@ -145,12 +146,20 @@ function responseContent(value: unknown): string {
 
 class AiContractError extends Error {}
 
-function parseResponse<T>(value: unknown, schema: z.ZodType<T>, normalize?: (parsed: unknown) => unknown): T {
+function parseResponse<T>(
+  value: unknown,
+  schema: z.ZodType<T>,
+  normalize?: (parsed: unknown) => unknown,
+  validate?: (parsed: T) => void,
+): T {
   try {
     const parsed: unknown = JSON.parse(responseContent(value)) as unknown
-    return schema.parse(normalize ? normalize(parsed) : parsed)
+    const result = schema.parse(normalize ? normalize(parsed) : parsed)
+    validate?.(result)
+    return result
   } catch (error) {
-    throw new AiContractError('AI response does not match the required JSON contract', { cause: error })
+    const detail = error instanceof Error ? `: ${error.message}` : ''
+    throw new AiContractError(`AI response does not match the required JSON contract${detail}`, { cause: error })
   }
 }
 
@@ -160,10 +169,11 @@ async function completeParsed<T>(
   schema: z.ZodType<T>,
   contract: string,
   normalize?: (parsed: unknown) => unknown,
+  validate?: (parsed: T) => void,
 ): Promise<T> {
   const first = await client.complete(request)
   try {
-    return parseResponse(first, schema, normalize)
+    return parseResponse(first, schema, normalize, validate)
   } catch (error) {
     if (!(error instanceof AiContractError)) throw error
     let invalidOutput = ''
@@ -184,6 +194,7 @@ async function completeParsed<T>(
       }),
       schema,
       normalize,
+      validate,
     )
   }
 }
@@ -246,6 +257,15 @@ function consolidationReports(candidates: readonly Candidate[]) {
   }))
 }
 
+function boundedEvidence(content: string, limit: number): string {
+  if (content.length <= limit) return content
+  const available = limit - evidenceOmissionMarker.length
+  if (available <= 0) return content.slice(0, limit)
+  const prefixLength = Math.ceil(available / 2)
+  const suffixLength = available - prefixLength
+  return `${content.slice(0, prefixLength)}${evidenceOmissionMarker}${content.slice(-suffixLength)}`
+}
+
 function gateStory(candidate: Candidate) {
   const reports = candidateReports(candidate)
   const reportLimit = Math.max(
@@ -254,7 +274,7 @@ function gateStory(candidate: Candidate) {
   )
   return {
     title: candidate.title,
-    reports: reports.map((report) => ({ ...report, content: report.content.slice(0, reportLimit) })),
+    reports: reports.map((report) => ({ ...report, content: boundedEvidence(report.content, reportLimit) })),
   }
 }
 
@@ -502,6 +522,11 @@ export function createEditorial(config: EditorialConfig, client: AiClient): Edit
     },
 
     async evaluate(candidate, recentPublications): Promise<GateDecision> {
+      const allowedSources = new Set(
+        candidateReports(candidate)
+          .filter((report) => report.contentOrigin === 'article-page')
+          .map((report) => report.canonicalUrl),
+      )
       const decision = await completeParsed(
         client,
         {
@@ -516,13 +541,8 @@ export function createEditorial(config: EditorialConfig, client: AiClient): Edit
         gateSchema,
         'one exact JSON object with publish:boolean, score:number from 0 to 1, reason:string, topics:string[], risks:string[], claims:{id:string,text:string,sourceUrls:string[]}[], uncertainties:{id:string,text:string,claimIds:string[],sourceUrls:string[]}[], sourceUrls:string[]; claims use text never claim; sourceUrls is always an array never an object; when publish=false claims and sourceUrls are empty arrays',
         normalizeGate,
+        (parsed) => validateGateEvidence(parsed, allowedSources),
       )
-      const allowedSources = new Set(
-        candidateReports(candidate)
-          .filter((report) => report.contentOrigin === 'article-page')
-          .map((report) => report.canonicalUrl),
-      )
-      validateGateEvidence(decision, allowedSources)
       const hasBlockingRisk = decision.risks.some((risk) => blockingRisks.has(risk.trim().toLowerCase()))
       const insufficientProfileEvidence =
         decision.publish && new Set(decision.sourceUrls).size < config.profile.minimumEvidenceSources

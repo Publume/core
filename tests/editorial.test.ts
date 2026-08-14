@@ -111,6 +111,78 @@ describe('editorial output boundary', () => {
     expect(repairSystem).toContain('sourceUrls is always an array never an object')
   })
 
+  it('repairs one gate response that cites an unfetched source', async () => {
+    const operations: string[] = []
+    const editorial = createEditorial(config, {
+      async complete(request) {
+        operations.push(request.operation)
+        return {
+          choices: [
+            {
+              message: {
+                content: JSON.stringify(
+                  request.operation === 'gate'
+                    ? {
+                        ...decision,
+                        claims: [
+                          {
+                            ...decision.claims[0],
+                            sourceUrls: ['https://unfetched.example.org/article'],
+                          },
+                        ],
+                        sourceUrls: ['https://unfetched.example.org/article'],
+                      }
+                    : decision,
+                ),
+              },
+            },
+          ],
+        }
+      },
+    })
+
+    expect(await editorial.evaluate(candidate, [])).toEqual(decision)
+    expect(operations).toEqual(['gate', 'repair'])
+  })
+
+  it('gives the gate evidence from both ends of a long report', async () => {
+    let gateContent = ''
+    const longCandidate = {
+      ...candidate,
+      content: `Opening evidence. ${'Middle evidence. '.repeat(1_000)} Closing evidence.`,
+    }
+    const editorial = createEditorial(config, {
+      async complete(request) {
+        const user = JSON.parse(request.user) as { story: { reports: { content: string }[] } }
+        gateContent = user.story.reports[0]?.content ?? ''
+        return {
+          choices: [
+            {
+              message: {
+                content: JSON.stringify({
+                  publish: false,
+                  score: 0.2,
+                  reason: 'insufficient evidence',
+                  topics: [],
+                  risks: ['insufficient-evidence'],
+                  claims: [],
+                  uncertainties: [],
+                  sourceUrls: [],
+                }),
+              },
+            },
+          ],
+        }
+      },
+    })
+
+    await editorial.evaluate(longCandidate, [])
+
+    expect(gateContent).toStartWith('Opening evidence.')
+    expect(gateContent).toContain('[evidence omitted]')
+    expect(gateContent).toEndWith('Closing evidence.')
+  })
+
   it('maps configured BCP 47 tags to explicit generation languages while preserving the tags', async () => {
     let systemPrompt = ''
     const requestedLanguages = [

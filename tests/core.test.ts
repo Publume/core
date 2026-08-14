@@ -454,6 +454,40 @@ describe('configuration and source boundaries', () => {
     expect(evidence.candidates[0]?.content).toContain('dates, figures, attribution')
   })
 
+  it('preserves both ends of long article evidence', async () => {
+    const opening = 'Opening evidence establishes the report scope.'
+    const closing = 'Closing evidence records the final dated conclusion.'
+    const articleBody = `${opening} ${'Supporting evidence fills the report. '.repeat(1_000)} ${closing}`
+    const reader = createSourceReader(
+      [{ id: 'news', url: 'https://news.example.org/feed.xml' }],
+      20_000,
+      async (input) => {
+        if (String(input).endsWith('/feed.xml'))
+          return response(
+            '<?xml version="1.0"?><rss version="2.0"><channel><item><guid>report-1</guid><title>Brief feed title</title><link>https://news.example.org/reports/1</link><description>Short feed summary.</description></item></channel></rss>',
+            'application/rss+xml',
+          )
+        return response(
+          `<html><head><script type="application/ld+json">${JSON.stringify({
+            '@type': 'NewsArticle',
+            headline: 'Long evidence report',
+            articleBody,
+          })}</script></head><body></body></html>`,
+          'text/html',
+        )
+      },
+    )
+
+    const evidence = await reader.collectEvidence((await reader.collect()).candidates)
+    const content = evidence.candidates[0]?.content
+
+    expect(evidence.errors).toEqual([])
+    expect(content).toStartWith(opening)
+    expect(content).toContain('[evidence omitted]')
+    expect(content).toEndWith(closing)
+    expect(content).toHaveLength(30_000)
+  })
+
   it('identifies itself and retries a transient article access denial', async () => {
     let articleRequests = 0
     const userAgents: string[] = []
