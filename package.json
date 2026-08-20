@@ -48,7 +48,7 @@
     "zod": "^4.0.0"
   },
   "devDependencies": {
-    "@biomejs/biome": "2.5.7",
+    "@biomejs/biome": "2.5.8",
     "@types/bun": "latest",
     "@types/jsdom": "30.0.0",
     "@types/node": "^26.1.2",
